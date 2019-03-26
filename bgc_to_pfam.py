@@ -11,9 +11,10 @@ Usage:
 Notes:
 Fasta files created in input_folder_fasta
 Only handles gbk files with one cluster
+domtables in input_folder_domtables
 
 TODO:
-    write excluded files to a file and the reason of exclusion.
+write excluded files to a file and the reason of exclusion (now stdout if verbose).
 
 Layout:
 process_gbks
@@ -47,14 +48,14 @@ def process_gbks(input_folder, exclude, exclude_contig_edge,\
     out_fasta = os.path.join(out_folder_base, inf+'_fasta')
     if not os.path.isdir(out_fasta):
         subprocess.check_call("mkdir {}".format(out_fasta), shell = True)
-    sys.stderr.write("Processing GBK files.")
+    print("Processing GBK files.")
     files = glob(os.path.join(input_folder, "*.gbk"))
     processed = 0
     excluded = 0
     filtered = 0
     for i, file_path in enumerate(files):
         if processed % 1000 == 0:
-            sys.stderr.write(" processed {} files".format(processed))
+            print(" processed {} files".format(processed))
         file_name = os.path.split(file_path)[1]
         if any([word in file_name for word in exclude]):
             excluded += 1
@@ -65,11 +66,11 @@ def process_gbks(input_folder, exclude, exclude_contig_edge,\
             if not done:
                 filtered +=1
         processed +=1
-    sys.stderr.write("Processed {} gbk files into {} fasta files.".format(\
+    print("Processed {} gbk files into {} fasta files.".format(\
         processed+excluded, processed-filtered))
-    sys.stderr.write(" excluded {} files containing {}".format(excluded,\
+    print(" excluded {} files containing {}".format(excluded,\
         ' or '.join(exclude)))
-    sys.stderr.write(" filtered {} files that didn't pass constraints".format(\
+    print(" filtered {} files that didn't pass constraints".format(\
         filtered))
     return(out_fasta)
 
@@ -131,7 +132,7 @@ def run_hmmscan(fasta_file, hmm_file, out_folder, verbose):
             out_name, hmm_file, fasta_file)
         if verbose:
             print("  " + hmmscan_cmd)
-        subprocess.check_output(hmmscan_cmd, shell=True)
+        subprocess.check_call(hmmscan_cmd, shell=True)
     else:
         raise SystemExit("Error running hmmscan: {} doesn't exist".format(\
             fasta_file))
@@ -148,21 +149,23 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose):
     out_folder = os.path.join(out_folder_base, inf+'_domtables')
     if not os.path.isdir(out_folder):
         subprocess.check_call("mkdir {}".format(out_folder), shell = True)
-    sys.stderr.write("Running hmmscan on fastas to generate domtables.")
+    print("Running hmmscan on fastas to generate domtables.")
     files = glob(os.path.join(input_folder, "*.fasta"))
     processed = 0
     for i, file_path in enumerate(files):
         if processed % 1000 == 0:
-            sys.stderr.write(" processed {} files".format(processed))
+            print(" processed {} files".format(processed))
         file_name = os.path.split(file_path)[1]
         run_hmmscan(file_path, hmm_file, out_folder, verbose)
         processed +=1
-    sys.stderr.write("Processed {} fasta files into domtables.".format(\
+    print("Processed {} fasta files into domtables.".format(\
         processed))
 
 if __name__ == "__main__":
     in_folder = sys.argv[1]
+    hmm = sys.argv[2]
 
     verbose = False
     fasta_folder = process_gbks(in_folder, exclude = ['final'],
-        exclude_contig_edge = True, min_genes = 5, verbose)
+        exclude_contig_edge = True, min_genes = 5, verbose = verbose)
+    hmmscan_wrapper(fasta_folder, hmm, verbose)
