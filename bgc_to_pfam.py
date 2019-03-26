@@ -40,23 +40,30 @@ def process_gbks(input_folder, exclude, exclude_contig_edge,
     out_fasta = os.path.join(out_folder_base, inf+'_fasta')
     if not os.path.isdir(out_fasta):
         subprocess.check_call("mkdir {}".format(out_fasta), shell = True)
-
+    print("Processing GBK files.")
     files = glob(os.path.join(input_folder, "*.gbk"))
     processed = 0
     excluded = 0
+    filtered = 0
     for i, file_path in enumerate(files):
+        if processed % 1000 == 0:
+            print(" processed {} files".format(processed))
         file_name = os.path.split(file_path)[1]
         if any([word in file_name for word in exclude]):
             excluded += 1
             continue
         else:
-            convert_gbk2fasta(file_path, out_fasta, exclude_contig_edge,
+            done = convert_gbk2fasta(file_path, out_fasta, exclude_contig_edge,
                 min_genes)
+            if not done:
+                filtered +=1
             #if i > 5:
                 #exit()
         processed +=1
     print("Processed {} files and excluded {} files containing {}".format(\
         processed, excluded, ' or '.join(exclude)))
+    print(" Filtered {} files that didn't pass constraints".format(filtered))
+    return(out_fasta)
 
 def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes):
     '''Convert one gbk file to a fasta file in out_folder
@@ -97,22 +104,24 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes):
         with open(outfile, 'w') as out:
             for seq in seqs:
                 out.write('{}\n{}\n'.format(seq, seqs[seq]))
+    return True
 
-def runHmmScan(fastaPath, hmmPath, outputdir, verbose):
+def runHmmScan(fasta_file, hmmPath, outputdir, verbose):
     """ Runs hmmscan command on a fasta file with a single core to generate a
     domtable file"""
     hmmFile = os.path.join(hmmPath,"Pfam-A.hmm")
-    if os.path.isfile(fastaPath):
-        name = ".".join(fastaPath.split(os.sep)[-1].split(".")[:-1])
+    if os.path.isfile(fasta_file):
+        name = ".".join(fasta_file.split(os.sep)[-1].split(".")[:-1])
         outputName = os.path.join(outputdir, name+".domtable")
         
-        hmmscan_cmd = "hmmscan --cpu 0 --domtblout {} --cut_tc {} {}".format(outputName, hmmFile, fastaPath)
+        hmmscan_cmd = "hmmscan --cpu 0 --domtblout {} --cut_tc {} {}".format(\
+            outputName, hmmFile, fasta_file)
         if verbose == True:
             print("   " + hmmscan_cmd)
         subprocess.check_output(hmmscan_cmd, shell=True)
     else:
         raise SystemExit("Error running hmmscan: {} doesn't exist".format(\
-            fastaPath))
+            fasta_file))
 
 if __name__ == "__main__":
     in_folder = argv[1]
