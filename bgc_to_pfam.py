@@ -21,13 +21,17 @@ process_gbks
 convert_gbk2fasta
 run_hmmscan
 hmmscan_wrapper
+parse_domtab
+sign_overlap
+parse_dom_wrapper
 '''
 
 import sys
 import os
-from glob import glob
+from glob import glob, iglob
 import subprocess
 from Bio import SeqIO
+from Bio import SearchIO
 from collections import OrderedDict
 from multiprocessing import Pool, cpu_count
 import argparse
@@ -84,14 +88,14 @@ def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
     out_fasta = os.path.join(output_folder, inf+'_fasta')
     if not os.path.isdir(out_fasta):
         subprocess.check_call("mkdir {}".format(out_fasta), shell = True)
-    print("Processing GBK files.")
-    files = glob(os.path.join(input_folder, "*.gbk"))
+    print("Processing gbk files into fasta files.")
+    files = iglob(os.path.join(input_folder, "*.gbk"))
     processed = 0
     excluded = 0
     filtered = 0
-    for i, file_path in enumerate(files):
+    for file_path in files:
         if processed % 1000 == 0:
-            print(" processed {} files".format(processed))
+            print(" converted {} files".format(processed))
         file_name = os.path.split(file_path)[1]
         if any([word in file_name for word in exclude]):
             excluded += 1
@@ -189,27 +193,102 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores):
         out_folder = input_folder[:-6]+'_domtables'
     if not os.path.isdir(out_folder):
         subprocess.check_call("mkdir {}".format(out_folder), shell = True)
-    print("Running hmmscan on fastas to generate domtables.")
-    files = glob(os.path.join(input_folder, "*.fasta"))
-    processed = 0
+    print("\nRunning hmmscan on fastas to generate domtables.")
+    files = iglob(os.path.join(input_folder, "*.fasta"))
     pool = Pool(cores, maxtasksperchild=1)
     #maxtasksperchild=1:process respawns after completing 1 task
-    for i, file_path in enumerate(files):
-        file_name = os.path.split(file_path)[1]
-        #run_hmmscan(file_path, hmm_file, out_folder, verbose)
-        pool.apply_async(run_hmmscan,args=(file_path, hmm_file, out_folder,
-            verbose))
-        processed +=1
+    for processed, file_path in enumerate(files):
+        if not os.path.exists(file_path):
+            file_name = os.path.split(file_path)[1]
+            #run_hmmscan(file_path, hmm_file, out_folder, verbose)
+            pool.apply_async(run_hmmscan,args=(file_path, hmm_file,
+                out_folder, verbose))
     pool.close()
     pool.join() #make the code in main wait for the pool processes to finish
     print("Processed {} fasta files into domtables.".format(\
-        processed))
+        processed+1))
+    return out_folder
+
+def parse_domtab(domfile, clus_file, min_overlap):
+    '''Parses domtab into a cluster domain file (csv)
+
+    domfile: string, file path
+    clus_file: open file for writing
+    min_overlap : float, the amount of overlaptwo domains must have for it to be considered overlap
+
+    clus_file will look like this:
+    Clus1,dom1,dom2,-(gene without domain)\\nClus2,dom1..
+    '''
+    queries = SearchIO.parse(domfile, 'hmmscan3-domtab')
+    cds_before = 0
+    cluster_doms = []
+    for query in queries:
+        dom_matches = []
+        cds_num = int(query.id.split('_')[-1])
+        for hit in query:
+            match = hit[0]
+            domain = match.hit_id
+            range_q = match.query_range
+            bitsc = match.bitscore
+            dom_matches.append((domain, range_q, bitsc))
+        dels = []
+        if len(query) > 1:
+            for i in range(len(query)-1):
+                for j in range(i+1, len(query)):
+                    if sign_overlap(dom_matches[i][1],dom_matches[j][1],
+                        min_overlap):
+                        if dom_matches[i][2] >=dom_matches[j][2]:
+                            dels.append(j)
+                        else:
+                            dels.append(i)
+        cds_doms = [dom_matches[i][0] for i in range(len(query)) if i not in dels]
+        #if a cds has no domains print - in output
+        gene_gap = cds_num - cds_before -1
+        if gene_gap > 0:
+            cds_doms = ['-']*gene_gap + cds_doms
+        cluster_doms += cds_doms
+        cds_before = cds_num
+    clus_file.write('{},{}\n'.format(\
+        os.path.split(domfile)[-1].split('.domtable')[0],
+        ','.join(cluster_doms)))
+
+def sign_overlap(tup1, tup2, cutoff):
+    '''Returns true if there is an overlap between two ranges higher than cutoff
+
+    tup1, tup2: tuples of two ints, start and end of alignment
+    cutoff: float, fraction that two alignments are allowed to overlap
+
+    Overlap is be calculated with the smallest domain alignment to be strict
+    '''
+    overlap = len(range(max(tup1[0], tup2[0]), min(tup1[1], tup2[1])))
+    if overlap > 0:
+        if overlap > min(abs(tup1[0]-tup1[1]), abs(tup2[0]-tup2[1]))*cutoff:
+            return True
+    return False
+
+def parse_dom_wrapper(in_folder, out_folder, cutoff):
+    '''Calls parse_domtab on all domtable files to create a clusterfile
+
+    in_folder, out_folder: strings, filepaths
+    cutoff: float, cutoff value for domain overlap
+    '''
+    print("\nParsing domtables.")
+    domtables = iglob(os.path.join(in_folder, '*.domtable'))
+    in_name = os.path.split(in_folder)[1].split('_domtables')[0]
+    out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
+    if not os.path.exists(out_file):
+        with open(out_file, 'w') as out:
+            for domtable in domtables:
+                parse_domtab(domtable, out, cutoff)
+    else:
+        print("  clusterfile already existed, did not parse again.")
+    print("Parsing domtables complete, result in {}".format(out_file))
 
 if __name__ == "__main__":
-    #in_folder = sys.argv[1]
-    #hmm = sys.argv[2]
     cmd = get_commands()
 
     fasta_folder = process_gbks(cmd.in_folder, cmd.out_folder, cmd.exclude,
         cmd.exclude_contig_edge, cmd.min_genes, cmd.verbose)
-    hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose, cmd.cores)
+    dom_folder = hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose,
+        cmd.cores)
+    parse_dom_wrapper(dom_folder, cmd.out_folder, cmd.domain_overlap_cutoff)
