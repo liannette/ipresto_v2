@@ -49,7 +49,7 @@ def get_commands():
     parser.add_argument("-c", "--cores", dest="cores", default=cpu_count(), 
         help="Set the number of cores the script may use (default: use all \
         available cores)", type=int)
-    parser.add_argument("-v", "--verbose", dest="verbose", 
+    parser.add_argument("-v", "--verbose", dest="verbose", required=False,
         action="store_true", default=False, help="Prints more detailed \
         information.")
     parser.add_argument("-d", "--domain_overlap_cutoff", 
@@ -81,7 +81,7 @@ def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
         base, inf = os.path.split(input_folder[:-1])
     else:
         base, inf = os.path.split(input_folder)
-    out_fasta = os.path.join(output_folder, inf+'_fasta'
+    out_fasta = os.path.join(output_folder, inf+'_fasta')
     if not os.path.isdir(out_fasta):
         subprocess.check_call("mkdir {}".format(out_fasta), shell = True)
     print("Processing GBK files.")
@@ -193,13 +193,15 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores):
     files = glob(os.path.join(input_folder, "*.fasta"))
     processed = 0
     pool = Pool(cores, maxtasksperchild=1)
+    #maxtasksperchild=1:process respawns after completing 1 task
     for i, file_path in enumerate(files):
         file_name = os.path.split(file_path)[1]
         #run_hmmscan(file_path, hmm_file, out_folder, verbose)
-        pool.apply_async(run_hmmscan,args=(file_path, hmm_file, out_folder, verbose))
+        pool.apply_async(run_hmmscan,args=(file_path, hmm_file, out_folder,
+            verbose))
         processed +=1
     pool.close()
-    pool.join()
+    pool.join() #make the code in main wait for the pool processes to finish
     print("Processed {} fasta files into domtables.".format(\
         processed))
 
@@ -208,10 +210,6 @@ if __name__ == "__main__":
     #hmm = sys.argv[2]
     cmd = get_commands()
 
-    if cmd.in_folder.endswith('/'):
-        fasta_folder = in_folder[:-1]+'_fasta'
-    else:
-        fasta.folder = in_folder+'_fasta'
-    #fasta_folder = process_gbks(cmd.in_folder, cmd.exclude,
-    #    cmd.exclude_contig_edge, cmd.min_genes, cmd.verbose)
-    hmmscan_wrapper(fasta_folder, cmd.hmm, cmd.verbose)
+    fasta_folder = process_gbks(cmd.in_folder, cmd.out_folder, cmd.exclude,
+        cmd.exclude_contig_edge, cmd.min_genes, cmd.verbose)
+    hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose, cmd.cores)
