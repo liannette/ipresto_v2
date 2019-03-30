@@ -6,15 +6,16 @@ Student number: 960516530090
 Script to convert BGCs into strings of PFAM domains.
 
 Usage:
-    python3 bgc_to_pfam.py <input_folder> <pfam_path> <output_folder>
+python3 bgc_to_pfam.py -h
+
+Example usage:
+python3 bgc_to_pfam.py -i ../testdata -o ../testdata_domains --hmm_path 
+    ../domains/Pfam_100subs_tc.hmm --exclude final -c 12 -e True
 
 Notes:
-Fasta files created in input_folder_fasta
+Fasta files created in output_folder/input_name_fasta
 Only handles gbk files with one cluster
-domtables in input_folder_domtables
-
-TODO:
-write excluded files to a file and the reason of exclusion (now stdout if verbose).
+Domtables in output_folder/input_name_domtables
 
 Layout:
 process_gbks
