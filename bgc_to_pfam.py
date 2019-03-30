@@ -33,7 +33,7 @@ from glob import glob, iglob
 import subprocess
 from Bio import SeqIO
 from Bio import SearchIO
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from multiprocessing import Pool, cpu_count
 import argparse
 
@@ -226,7 +226,7 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
         print("  parsing domtable {}".format(domfile))
     queries = SearchIO.parse(domfile, 'hmmscan3-domtab')
     cds_before = 0
-    cluster_doms = []
+    cluster_doms = [] #domain list for the cluster
     for query in queries:
         dom_matches = []
         cds_num = int(query.id.split('_')[-1])
@@ -257,6 +257,7 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
     clus_file.write('{},{}\n'.format(\
         os.path.split(domfile)[-1].split('.domtable')[0],
         ','.join(cluster_doms)))
+    return cluster_doms
 
 def sign_overlap(tup1, tup2, cutoff):
     '''
@@ -283,10 +284,16 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose):
     domtables = iglob(os.path.join(in_folder, '*.domtable'))
     in_name = os.path.split(in_folder)[1].split('_domtables')[0]
     out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
+    stat_file = os.path.join(out_folder, in_name+'_domstats.txt')
     if not os.path.exists(out_file):
+        domc = Counter()
         with open(out_file, 'w') as out:
             for domtable in domtables:
-                parse_domtab(domtable, out, cutoff, verbose)
+                doms = parse_domtab(domtable, out, cutoff, verbose)
+                domc.update(doms)
+        with open(stat_file, 'w') as stat:
+            for dom, c in domc.most_common():
+                stat.write("{}\t{}\n".format(dom,c))
     else:
         print("  clusterfile already existed, did not parse again.")
     print("Parsing domtables complete, result in {}".format(out_file))
