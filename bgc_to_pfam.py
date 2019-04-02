@@ -3,7 +3,7 @@
 Author: Joris Louwen
 Student number: 960516530090
 
-Script to convert BGCs into strings of PFAM domains.
+Script to convert BGCs into strings of domains.
 
 Usage:
 python3 bgc_to_pfam.py -h
@@ -13,9 +13,8 @@ python3 bgc_to_pfam.py -i ../testdata -o ../testdata_domains --hmm_path
     ../domains/Pfam_100subs_tc.hmm --exclude final -c 12 -e True
 
 Notes:
-Fasta files created in output_folder/input_name_fasta
 Only handles gbk files with one cluster
-Domtables in output_folder/input_name_domtables
+Multiple cores are only used for hmmscan step
 
 Layout:
 process_gbks
@@ -25,6 +24,9 @@ hmmscan_wrapper
 parse_domtab
 sign_overlap
 parse_dom_wrapper
+
+Required:
+hmmscan
 '''
 
 import sys
@@ -89,7 +91,7 @@ def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
     out_fasta = os.path.join(output_folder, inf+'_fasta')
     if not os.path.isdir(out_fasta):
         subprocess.check_call("mkdir {}".format(out_fasta), shell = True)
-    print("Processing gbk files into fasta files.")
+    print("\nProcessing gbk files into fasta files.")
     files = iglob(os.path.join(input_folder, "*.gbk"))
     processed = 0
     excluded = 0
@@ -280,7 +282,7 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose):
     in_folder, out_folder: strings, filepaths
     cutoff: float, cutoff value for domain overlap
     '''
-    print("\nParsing domtables in {}".format(in_folder))
+    print("\nParsing domtables from folder {}".format(in_folder))
     domtables = iglob(os.path.join(in_folder, '*.domtable'))
     in_name = os.path.split(in_folder)[1].split('_domtables')[0]
     out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
@@ -292,11 +294,13 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose):
                 doms = parse_domtab(domtable, out, cutoff, verbose)
                 domc.update(doms)
         with open(stat_file, 'w') as stat:
-            for dom, c in domc.most_common():
-                stat.write("{}\t{}\n".format(dom,c))
+            stat.write("#Total\t{}".format(sum(domc.values())))
+            for dom, count in domc.most_common():
+                stat.write("{}\t{}\n".format(dom,count))
     else:
         print("  clusterfile already existed, did not parse again.")
     print("Parsing domtables complete, result in {}".format(out_file))
+    print("Statitstics about doms in {}".format(stat_file))
 
 if __name__ == "__main__":
     cmd = get_commands()
