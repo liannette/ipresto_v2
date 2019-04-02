@@ -15,15 +15,29 @@ python3 filter_bgcs.py
 Notes:
 
 Layout:
+get_commands
+read_clusterfile
+calc_adj_index
 
-Required:
-
+TODO:
+make functions that:
+-read clusterfile and write a new filtered file without clusters with less
+    domains than min_doms
+-calculate Adjacency dist between two domains/see if one is contained within
+    the other
+-loop through every combination of domains and return dist in a matrix
+-create graphs from the matrix using some cutoff (using igraph, networkx?)
+-choose representatives
+-write file with just representatives and one with representatives linked
+    to the bgcs that are filtered out
 '''
 import os
 from glob import glob, iglob
 import subprocess
 from collections import OrderedDict, Counter
 import argparse
+from multiprocessing import Pool, cpu_count
+from itertools import combinations
 
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to turn a \
@@ -42,8 +56,70 @@ def get_commands():
     parser.add_argument("--min_doms", dest="min_doms", default=5,
         help="The minimum amount of domains in a BGC to be included in the \
         analysis. Default is 0 domains", type=int)
+    parser.add_argument("--sim_cutoff", dest="sim_cutoff", default=0.95,
+        help="Cutoff for cluster similarity in redundancy filtering (default:\
+        0.95", type=float)
     return parser.parse_args()
 
+def read_clusterfile(infile, m_doms):
+    """Reads a clusterfile into a dictionary
+
+    infile: str, filepath
+    clusters with less than m_doms domains are not returned
+    """
+    with open(infile, 'r') as inf:
+        clus_dict = OrderedDict()
+        for line in inf:
+            line = line.strip().split(',')
+            clus = line[0]
+            doms = line[1:]
+            ldoms = len([dom for dom in doms if not dom == '-'])
+            if ldoms < m_doms:
+                continue
+            if not clus in clus_dict.keys():
+                clus_dict[line[0]] = line[1:]
+            else:
+                print("Clusternames not unique, {} read twice".format(clus))
+    return clus_dict
+
+def calc_adj_index(clus1, clus2):
+    '''Returns the adjacency index between two clusters
+
+    clus1, clus2: list of strings, domainlist of a cluster
+
+    If there is an empty gene between two domains these two domains are not
+        adjacent
+    '''
+    #generate all unique domain pairs
+    dom_p1 = {tuple(sorted(dp)) for dp in zip(*(clus1[:-1],clus1[1:])) \
+        if not '-' in dp}
+    dom_p2 = {tuple(sorted(dp)) for dp in zip(*(clus2[:-1],clus2[1:])) \
+        if not '-' in dp}
+    if not dom_p1 or not dom_p2:
+        return
+    ai = len(dom_p1 & dom_p2)/len(dom_p1 | dom_p2)
+    return ai
+
+def is_contained(clus1, clus2):
+    '''
+    Returns a bool if all domains from one of the clusters are in the other
+
+    clus1, clus2: list of strings, domainlist of a cluster
+    '''
+    one_in_two = all([dom in clus2 for dom in clus1 if not dom == '-'])
+    two_in_one = all([dom in clus1 for dom in clus2 if not dom == '-'])
+    if one_in_two or two_in_one:
+        return True
+    return False
 
 if __name__ == "__main__":
     cmd = get_commands()
+    dom_dict = read_clusterfile(cmd.in_file, cmd.min_doms)
+    #filter out bgcs with less than min_dom domains
+    clus_names = list(dom_dict.keys()) #make list bgcs have an index
+    for p1, p2 in combinations(clus_names[:100], 2):
+        bval = is_contained(dom_dict[p1],dom_dict[p2])
+        ai = calc_adj_index(dom_dict[p1],dom_dict[p2])
+        if ai > cmd.sim_cutoff or bval:
+            print(p1,p2,ai,bval)
+
