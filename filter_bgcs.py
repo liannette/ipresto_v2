@@ -30,6 +30,9 @@ make functions that:
 -choose representatives
 -write file with just representatives and one with representatives linked
     to the bgcs that are filtered out
+
+Required:
+networkx (https://github.com/networkx/networkx)
 '''
 import os
 from glob import glob, iglob
@@ -37,7 +40,9 @@ import subprocess
 from collections import OrderedDict, Counter
 import argparse
 from multiprocessing import Pool, cpu_count
+from functools import partial
 from itertools import combinations
+import networkx as nx
 
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to turn a \
@@ -112,14 +117,48 @@ def is_contained(clus1, clus2):
         return True
     return False
 
+def generate_edges(nodes, dom_dict, cutoff, cores):
+    '''
+    '''
+    pairs = combinations(clus_names, 2)
+    pool = Pool(cores, maxtasksperchild = 100)
+    #I could add imap if this is still too slow for antismashdb
+    #with imap specify chunksize as number of pairs-1
+    edges = pool.map(partial(generate_edge, d_dict = dom_dict, \
+        cutoff = cutoff), pairs)
+    edges = [edge for edge in edges if not edge == None]
+    return edges
+
+def generate_edge(pair, d_dict, cutoff):
+    '''
+    '''
+    p1,p2 = pair
+    contained = is_contained(d_dict[p1], d_dict[p2])
+    ai = calc_adj_index(d_dict[p1],d_dict[p2])
+    if contained or ai > cutoff:
+        # print(pair,ai,contained)
+        return pair
+
+def generate_graph(nodes, edges):
+    '''
+    '''
+    g = nx.Graph()
+    g.add_nodes_from(nodes)
+    g.add_edges_from(edges)
+    return g
+
 if __name__ == "__main__":
     cmd = get_commands()
     dom_dict = read_clusterfile(cmd.in_file, cmd.min_doms)
     #filter out bgcs with less than min_dom domains
-    clus_names = list(dom_dict.keys()) #make list bgcs have an index
-    for p1, p2 in combinations(clus_names[:100], 2):
-        bval = is_contained(dom_dict[p1],dom_dict[p2])
-        ai = calc_adj_index(dom_dict[p1],dom_dict[p2])
-        if ai > cmd.sim_cutoff or bval:
-            print(p1,p2,ai,bval)
+    clus_names = list(dom_dict.keys()) #make list so bgcs have an index
+    # for p1, p2 in combinations(clus_names, 2):
+        # bval = is_contained(dom_dict[p1],dom_dict[p2])
+        # ai = calc_adj_index(dom_dict[p1],dom_dict[p2])
+        # if ai > cmd.sim_cutoff or bval:
+            # print(p1,p2,ai,bval)
+    edges = generate_edges(clus_names, dom_dict, cmd.sim_cutoff, cmd.cores)
+    graph = generate_graph(clus_names, edges)
+    print('nodes:',graph.number_of_nodes())
+    print('edges:',g.number_of_edges())
 
