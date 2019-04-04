@@ -65,7 +65,7 @@ def get_commands():
         analysis. Default is 0 domains", type=int)
     parser.add_argument("--sim_cutoff", dest="sim_cutoff", default=0.95,
         help="Cutoff for cluster similarity in redundancy filtering (default:\
-        0.95", type=float)
+        0.95)", type=float)
     return parser.parse_args()
 
 def read_clusterfile(infile, m_doms, verbose):
@@ -127,7 +127,12 @@ def is_contained(clus1, clus2):
     return False
 
 def generate_edges(nodes, dom_dict, cutoff, cores):
-    '''
+    '''Returns a pair of clusters in a tuple if ai/contained above cutoff
+
+    nodes: list of strings, clusternames
+    dom_dict: dict {clus1:[domains]}, clusters linked to domains
+    cutoff: float, between 0-1, when clusters are similar
+    cores: int, amount of cores used for calculation
     '''
     print("\nGenerating similarity scores")
     pairs = combinations(clus_names, 2)
@@ -156,12 +161,16 @@ def generate_edge(pair, d_dict, cutoff):
         # print(pair,ai,contained)
         return(p1,p2,{'ai':ai,'contained':contained})
 
-def generate_graph(nodes, edges):
-    '''
+def generate_graph(edges):
+    '''Returns a networkx graph
+
+    edges: list of tuples, (pair1,pair2,{attributes})
     '''
     g = nx.Graph()
-    # g.add_nodes_from(nodes)
     g.add_edges_from(edges)
+    print('Generated graph with:')
+    print(' {} nodes'.format(g.number_of_nodes()))
+    print(' {} edges'.format(g.number_of_edges()))
     return g
 
 if __name__ == "__main__":
@@ -170,28 +179,35 @@ if __name__ == "__main__":
     dom_dict = read_clusterfile(cmd.in_file, cmd.min_doms, cmd.verbose)
     clus_names = list(dom_dict.keys())#[0:300] #make list so bgcs have an index
     edges = generate_edges(clus_names, dom_dict, cmd.sim_cutoff, cmd.cores)
-    graph = generate_graph(clus_names, edges)
-    print('nodes:',graph.number_of_nodes())
-    print('edges:',graph.number_of_edges())
-    print('clus4:',graph.adj[clus_names[4]])
+    graph = generate_graph(edges)
+    print('ARGH01000000_KB894962.1.cluster038:',graph.adj['ARGH01000000_KB894962.1.cluster038'])
     
     #find community structure using some some community/clique algorithm
-    # cliqs = nx.algorithms.clique.find_cliques(graph)
-    cliqs = nx.algorithms.community.greedy_modularity_communities(graph)
+    cliqs = nx.algorithms.clique.find_cliques(graph)
+    # cliqs = nx.algorithms.community.greedy_modularity_communities(graph)
     cliqs = sorted(cliqs, key=len, reverse = True)
-    print(cliqs[0])
+    # print(cliqs[0])
     for c in cliqs:
-        print(len(c))
+        #incorporate '-'s
+        domlist = [dom_dict[clus] for clus in c]
+        domlist_del_empty = []
+        for doms in domlist:
+            doms_del_empty = [d for d in doms if not d == '-']
+        domlens = [len(doms) for doms in domlist_del_empty]
+        #if there are multiple clus with biggest size, choose one?
+        clus_maxlen = [clus for clus, dlen in zip(c,domlens) \
+            if dlen == max(domlens)]
+        print(max(domlens), clus_maxlen, domlens)
     
     # visualising, maybe with subplot plot all different cliques/networks
-    cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
-    options = {'node_size': 2,'width': 0.2}
-    pos = nx.spring_layout(graph)
-    plt.figure()
-    nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
-        **options)
-    for c in cliqs:
-        nx.draw_networkx_nodes(graph, pos=pos, nodelist=c, \
-            node_color=choice(cols), **options)
-    plt.show()
+    # cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
+    # options = {'node_size': 2,'width': 0.2}
+    # pos = nx.spring_layout(graph)
+    # plt.figure()
+    # nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
+        # **options)
+    # for c in cliqs:
+        # nx.draw_networkx_nodes(graph, pos=pos, nodelist=c, \
+            # node_color=choice(cols), **options)
+    # plt.show()
 
