@@ -300,7 +300,7 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose):
     else:
         print("  clusterfile already existed, did not parse again.")
     print("Parsing domtables complete, result in {}".format(out_file))
-    print("Statitstics about doms in {}".format(stat_file))
+    print(" statistics about doms in {}".format(stat_file))
 
 if __name__ == "__main__":
     cmd = get_commands()
