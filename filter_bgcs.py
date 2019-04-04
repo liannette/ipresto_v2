@@ -43,6 +43,8 @@ from multiprocessing import Pool, cpu_count
 from functools import partial
 from itertools import combinations
 import networkx as nx
+import matplotlib.pyplot as plt
+from random import choice
 
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to turn a \
@@ -66,12 +68,14 @@ def get_commands():
         0.95", type=float)
     return parser.parse_args()
 
-def read_clusterfile(infile, m_doms):
+def read_clusterfile(infile, m_doms, verbose):
     """Reads a clusterfile into a dictionary
 
     infile: str, filepath
     clusters with less than m_doms domains are not returned
     """
+    print("Filtering clusterfile")
+    filtered = 0
     with open(infile, 'r') as inf:
         clus_dict = OrderedDict()
         for line in inf:
@@ -80,11 +84,16 @@ def read_clusterfile(infile, m_doms):
             doms = line[1:]
             ldoms = len([dom for dom in doms if not dom == '-'])
             if ldoms < m_doms:
+                filtered +=1
+                if verbose:
+                    print("  excluding {} less than min domains".format(clus))
                 continue
             if not clus in clus_dict.keys():
                 clus_dict[line[0]] = line[1:]
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
+    print("Done. Keeping {} clusters".format(len(clus_dict)))
+    print(" {} clusters have less than {} domains".format(filtered,m_doms))
     return clus_dict
 
 def calc_adj_index(clus1, clus2):
@@ -120,6 +129,7 @@ def is_contained(clus1, clus2):
 def generate_edges(nodes, dom_dict, cutoff, cores):
     '''
     '''
+    print("\nGenerating similarity scores")
     pairs = combinations(clus_names, 2)
     pool = Pool(cores, maxtasksperchild = 100)
     #I could add imap if this is still too slow for antismashdb
@@ -127,38 +137,61 @@ def generate_edges(nodes, dom_dict, cutoff, cores):
     edges = pool.map(partial(generate_edge, d_dict = dom_dict, \
         cutoff = cutoff), pairs)
     edges = [edge for edge in edges if not edge == None]
+    print("Done. {} pairs above threshold".format(len(edges)))
     return edges
 
 def generate_edge(pair, d_dict, cutoff):
     '''
+    Calculate similarity scores between two bgcs and return if above cutoff
+
+    pair: tuple of 2 strings, 2 clusternames
+    d_dict: dict of {clustername:domains}
+    cutoff: float
+    A tuple is returned that can be read as an edge by nx.Graph.add_edges_from
     '''
     p1,p2 = pair
     contained = is_contained(d_dict[p1], d_dict[p2])
     ai = calc_adj_index(d_dict[p1],d_dict[p2])
     if contained or ai > cutoff:
         # print(pair,ai,contained)
-        return pair
+        return(p1,p2,{'ai':ai,'contained':contained})
 
 def generate_graph(nodes, edges):
     '''
     '''
     g = nx.Graph()
-    g.add_nodes_from(nodes)
+    # g.add_nodes_from(nodes)
     g.add_edges_from(edges)
     return g
 
 if __name__ == "__main__":
     cmd = get_commands()
-    dom_dict = read_clusterfile(cmd.in_file, cmd.min_doms)
-    #filter out bgcs with less than min_dom domains
-    clus_names = list(dom_dict.keys()) #make list so bgcs have an index
-    # for p1, p2 in combinations(clus_names, 2):
-        # bval = is_contained(dom_dict[p1],dom_dict[p2])
-        # ai = calc_adj_index(dom_dict[p1],dom_dict[p2])
-        # if ai > cmd.sim_cutoff or bval:
-            # print(p1,p2,ai,bval)
+    #read_clusterfile filters out bgcs with less than min_dom domains
+    dom_dict = read_clusterfile(cmd.in_file, cmd.min_doms, cmd.verbose)
+    clus_names = list(dom_dict.keys())#[0:300] #make list so bgcs have an index
     edges = generate_edges(clus_names, dom_dict, cmd.sim_cutoff, cmd.cores)
     graph = generate_graph(clus_names, edges)
     print('nodes:',graph.number_of_nodes())
-    print('edges:',g.number_of_edges())
+    print('edges:',graph.number_of_edges())
+    print('clus4:',graph.adj[clus_names[4]])
+    
+    #find community structure using some some community/clique algorithm
+    # cliqs = nx.algorithms.clique.find_cliques(graph)
+    cliqs = nx.algorithms.community.greedy_modularity_communities(graph)
+    cliqs = sorted(cliqs, key=len, reverse = True)
+    print(cliqs[0])
+    for c in cliqs:
+        print(len(c))
+    
+    # visualising, maybe with subplot plot all different cliques/networks
+    cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
+    options = {'node_size': 2,'width': 0.2}
+    pos = nx.spring_layout(graph)
+    plt.figure()
+    nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
+        **options)
+    for c in cliqs:
+        nx.draw_networkx_nodes(graph, pos=pos, nodelist=c, \
+            node_color=choice(cols), **options)
+    plt.show()
 
