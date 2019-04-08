@@ -44,7 +44,7 @@ from functools import partial
 from itertools import combinations
 import networkx as nx
 import matplotlib.pyplot as plt
-from random import choice
+import random
 
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to turn a \
@@ -60,9 +60,9 @@ def get_commands():
     parser.add_argument("-v", "--verbose", dest="verbose", required=False,
         action="store_true", default=False, help="Prints more detailed \
         information.")
-    parser.add_argument("--min_doms", dest="min_doms", default=5,
+    parser.add_argument("--min_doms", dest="min_doms", default=2,
         help="The minimum amount of domains in a BGC to be included in the \
-        analysis. Default is 0 domains", type=int)
+        analysis. Default is 2 domains", type=int)
     parser.add_argument("--sim_cutoff", dest="sim_cutoff", default=0.95,
         help="Cutoff for cluster similarity in redundancy filtering (default:\
         0.95)", type=float)
@@ -72,12 +72,15 @@ def read_clusterfile(infile, m_doms, verbose):
     """Reads a clusterfile into a dictionary
 
     infile: str, filepath
+    m_doms: int, minimum of domains a cluster should have
+    verbose: bool, if True print additional info
     clusters with less than m_doms domains are not returned
     """
-    print("Filtering clusterfile")
+    print("\nFiltering clusterfile")
     filtered = 0
     with open(infile, 'r') as inf:
         clus_dict = OrderedDict()
+        len_dict = OrderedDict()
         for line in inf:
             line = line.strip().split(',')
             clus = line[0]
@@ -89,12 +92,13 @@ def read_clusterfile(infile, m_doms, verbose):
                     print("  excluding {} less than min domains".format(clus))
                 continue
             if not clus in clus_dict.keys():
-                clus_dict[line[0]] = line[1:]
+                clus_dict[clus] = doms
+                len_dict[clus] = ldoms
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
     print("Done. Keeping {} clusters".format(len(clus_dict)))
     print(" {} clusters have less than {} domains".format(filtered,m_doms))
-    return clus_dict
+    return clus_dict, len_dict
 
 def calc_adj_index(clus1, clus2):
     '''Returns the adjacency index between two clusters
@@ -109,8 +113,9 @@ def calc_adj_index(clus1, clus2):
         if not '-' in dp}
     dom_p2 = {tuple(sorted(dp)) for dp in zip(*(clus2[:-1],clus2[1:])) \
         if not '-' in dp}
+    #if doms are separated by '-' then there are no dom pairs. if happens ai=0
     if not dom_p1 or not dom_p2:
-        return
+        return 0.0        
     ai = len(dom_p1 & dom_p2)/len(dom_p1 | dom_p2)
     return ai
 
@@ -138,7 +143,7 @@ def generate_edges(nodes, dom_dict, cutoff, cores):
     pairs = combinations(clus_names, 2)
     pool = Pool(cores, maxtasksperchild = 100)
     #I could add imap if this is still too slow for antismashdb
-    #with imap specify chunksize as number of pairs-1
+    #with imap specify chunksize as number of pairs?
     edges = pool.map(partial(generate_edge, d_dict = dom_dict, \
         cutoff = cutoff), pairs)
     edges = [edge for edge in edges if not edge == None]
@@ -157,6 +162,8 @@ def generate_edge(pair, d_dict, cutoff):
     p1,p2 = pair
     contained = is_contained(d_dict[p1], d_dict[p2])
     ai = calc_adj_index(d_dict[p1],d_dict[p2])
+    if ai == None:
+        print(ai,pair)
     if contained or ai > cutoff:
         # print(pair,ai,contained)
         return(p1,p2,{'ai':ai,'contained':contained})
@@ -173,41 +180,108 @@ def generate_graph(edges):
     print(' {} edges'.format(g.number_of_edges()))
     return g
 
+def visualise_graph(graph, subgraph_list = None):
+    '''Plots a graph with possible subgraphs in different colours
+
+    graph: networkx graph
+    subgraph_list: list of lists of node names that should be coloured
+        differently, default = None
+    '''
+    cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
+    options = {'node_size': 2,'width': 0.2}
+    pos = nx.spring_layout(graph)
+    plt.figure()
+    nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
+        **options)
+    if subgraph_list:
+        for sub in subgraph_list:
+            nx.draw_networkx_nodes(graph, pos=pos, nodelist=sub, \
+                node_color=random.choice(cols), **options)
+    plt.show()
+
+def find_representatives(clqs, d_l_dict, graph):
+    '''
+    Returns {representative:[clique]} based on bgc with most domains in clique
+
+    clqs: list of lists of strings, cliques of clusters
+    d_l_dict: dict of {clus_name:amount_of_domains(int)}
+    graph: networkx graph structure of the cliques
+    Returns also the representative in the clique list (dict values)
+    The longest cluster is chosen (most domains). If there are multiple
+        longest clusters then the cluster with the least connections is
+        chosen (to preserve most information).
+    '''
+    reps_dict = OrderedDict()
+    dels = set() #set of nodes for which a representative has been found
+    clqs = sorted(clqs, key=len, reverse=True)
+    for cliq in clqs:
+        cliq = [clus for clus in cliq if not clus in dels]
+        if cliq:
+            domlist = [(clus,d_l_dict[clus]) for clus in cliq]
+            maxdoml = max([doms[1] for doms in domlist])
+            clus_maxlen = [clus for clus, doml in domlist \
+                if doml == maxdoml]
+            if len(clus_maxlen) > 1:
+                min_degr = min([deg for clus, deg in graph.degree(clus_maxlen)])
+                rep = random.choice([clus for clus in clus_maxlen \
+                    if graph.degree(clus) == min_degr])
+            else:
+                rep = clus_maxlen[0]
+            try:
+                reps_dict[rep].update(cliq)
+            except KeyError:
+                reps_dict[rep] = set(cliq)
+            cliq.remove(rep)
+            dels.update(cliq)
+    return reps_dict
+
+def filter_clusters
+
 if __name__ == "__main__":
     cmd = get_commands()
+    random.seed(0)
     #read_clusterfile filters out bgcs with less than min_dom domains
-    dom_dict = read_clusterfile(cmd.in_file, cmd.min_doms, cmd.verbose)
+    dom_dict, doml_dict = read_clusterfile(cmd.in_file, cmd.min_doms, \
+        cmd.verbose)
     clus_names = list(dom_dict.keys())#[0:300] #make list so bgcs have an index
     edges = generate_edges(clus_names, dom_dict, cmd.sim_cutoff, cmd.cores)
     graph = generate_graph(edges)
-    print('ARGH01000000_KB894962.1.cluster038:',graph.adj['ARGH01000000_KB894962.1.cluster038'])
-    
-    #find community structure using some some community/clique algorithm
     cliqs = nx.algorithms.clique.find_cliques(graph)
-    # cliqs = nx.algorithms.community.greedy_modularity_communities(graph)
-    cliqs = sorted(cliqs, key=len, reverse = True)
-    # print(cliqs[0])
-    for c in cliqs:
-        #incorporate '-'s
-        domlist = [dom_dict[clus] for clus in c]
-        domlist_del_empty = []
-        for doms in domlist:
-            doms_del_empty = [d for d in doms if not d == '-']
-        domlens = [len(doms) for doms in domlist_del_empty]
-        #if there are multiple clus with biggest size, choose one?
-        clus_maxlen = [clus for clus, dlen in zip(c,domlens) \
-            if dlen == max(domlens)]
-        print(max(domlens), clus_maxlen, domlens)
+    cliqs = sorted(cliqs, key=len)
+    reps_dict = find_representatives(cliqs, doml_dict, graph)
+    print(len(reps_dict.keys()))
+    reps = [[rep] for rep in reps_dict.keys()]
+    # visualise_graph(graph,reps)
+    rep_g = graph.subgraph(reps_dict.keys())
+    r_cl = nx.algorithms.clique.find_cliques(rep_g)
+    r_cl = [cl for cl in r_cl if len(cl) > 1]
+    r_cl = sorted(r_cl,key=len)
+    print([len(cl) for cl in r_cl],len(r_cl))
+    # visualise_graph(rep_g,r_cl)
+    reps_reps_dict = find_representatives(r_cl, doml_dict, graph)
+    print(reps_reps_dict)
+    # print('ARGH01000000_KB894962.1.cluster038:',graph.adj['ARGH01000000_KB894962.1.cluster038'])
     
+    #choose from each cliq the cluster with the most domains as representative
+    # reps = []
+    # for cliq in cliqs:
+        # domlist = [(clus,doml_dict[clus]) for clus in cliq]
+        # # domlens = [doml_dict[clus] for clus in cliq]
+        # maxdoml = max([doms[1] for doms in domlist])
+        # clus_maxlen = random.choice([clus for clus, doml in domlist \
+            # if doml == maxdoml])
+        # reps.append(clus_maxlen)
+        # # print(maxdoml, clus_maxlen, domlist)
+    # dupl_reps = set(rep for rep in reps if reps.count(rep) > 1)
+    # print(len(set(reps)), len(dupl_reps), len(reps))
+    # reps = list(set(reps))
+    # # reps_edges = generate_edges(reps,dom_dict,cmd.sim_cutoff,cmd.cores)
+    # # reps_graph = generate_graph(reps_edges)
+    # reps_graph = graph.subgraph(reps)
+    # print("nodes, edges of reps_graph: {}, {}".format(reps_graph.number_of_nodes(),reps_graph.number_of_edges()))
+    # reps_cliqs = nx.algorithms.clique.find_cliques(reps_graph)
     # visualising, maybe with subplot plot all different cliques/networks
-    # cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
-    # options = {'node_size': 2,'width': 0.2}
-    # pos = nx.spring_layout(graph)
-    # plt.figure()
-    # nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
-        # **options)
-    # for c in cliqs:
-        # nx.draw_networkx_nodes(graph, pos=pos, nodelist=c, \
-            # node_color=choice(cols), **options)
-    # plt.show()
+    
+    # visualise_graph(reps_graph, reps_cliqs)
+    
 
