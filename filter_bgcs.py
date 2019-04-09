@@ -180,12 +180,15 @@ def generate_graph(edges):
     print(' {} edges'.format(g.number_of_edges()))
     return g
 
-def visualise_graph(graph, subgraph_list = None):
+def visualise_graph(graph, subgraph_list = None, groups = True):
     '''Plots a graph with possible subgraphs in different colours
 
     graph: networkx graph
     subgraph_list: list of lists of node names that should be coloured
         differently, default = None
+    groups: bool, are there groups in the subgraph_list that you want to
+        colour differently (True)? or are nodes in subgraph list one seperate
+        group (False)
     '''
     cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
     options = {'node_size': 2,'width': 0.2}
@@ -194,9 +197,14 @@ def visualise_graph(graph, subgraph_list = None):
     nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
         **options)
     if subgraph_list:
-        for sub in subgraph_list:
-            nx.draw_networkx_nodes(graph, pos=pos, nodelist=sub, \
-                node_color=random.choice(cols), **options)
+        if groups:
+            for sub in subgraph_list:
+                nx.draw_networkx_nodes(graph, pos=pos, nodelist=sub, \
+                    node_color=random.choice(cols), **options)
+        else:
+            for sub in subgraph_list:
+                nx.draw_networkx_nodes(graph, pos=pos, nodelist=sub, \
+                    node_color='#91bfdb', marker='s', **options)
     plt.show()
 
 def find_representatives(clqs, d_l_dict, graph):
@@ -211,6 +219,7 @@ def find_representatives(clqs, d_l_dict, graph):
         longest clusters then the cluster with the least connections is
         chosen (to preserve most information).
     '''
+    random.seed(0)
     reps_dict = OrderedDict()
     dels = set() #set of nodes for which a representative has been found
     clqs = sorted(clqs, key=len, reverse=True)
@@ -235,7 +244,40 @@ def find_representatives(clqs, d_l_dict, graph):
             dels.update(cliq)
     return reps_dict
 
-def filter_clusters
+def find_all_representatives(d_l_dict, g):
+    '''Iterates find_representatives until there are no similar bgcs
+
+    d_l_dict: dict of {clus_name:amount_of_domains(int)}
+    graph: networkx graph structure containing the cliques
+    all_reps_dict: dict of {representative:[represented]}
+    '''
+    all_reps_dict = {}
+    subg = g.subgraph(g.nodes)
+    #make a while loop after testing while subg.number_of_edges != 0
+    
+    for i in range(5):
+        print('iteration {}, edges left: {}'.format(i,subg.number_of_edges()))
+        cliqs = nx.algorithms.clique.find_cliques(subg)
+        cliqs = sorted(cliqs, key=len)
+        print(len(cliqs))
+        cliqs = [cl for cl in cliqs if len(cl) > 1]
+        print(len(cliqs))
+        reps_dict = find_representatives(cliqs, d_l_dict, subg)
+        subg = subg.subgraph(reps_dict.keys())
+        #merge reps_dict with all_reps_dict
+        for key, vals in reps_dict.items():
+            if not key in all_reps_dict:
+                all_reps_dict[key] = vals
+            else:
+                #merge represented clusters in a new representative
+                newvals = [v for val in vals for v in all_reps_dict[val] \
+                    if val in all_reps_dict.keys()]
+                #if statement for bgcs already represented by this 
+                #representative and thus no longer in all_reps_dict
+                for remove_key in vals:
+                    del all_reps_dict[remove_key]
+                all_reps_dict[key] = newvals
+    return all_reps_dict
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -261,7 +303,12 @@ if __name__ == "__main__":
     reps_reps_dict = find_representatives(r_cl, doml_dict, graph)
     print(reps_reps_dict)
     # print('ARGH01000000_KB894962.1.cluster038:',graph.adj['ARGH01000000_KB894962.1.cluster038'])
-    
+    all_reps = find_all_representatives(doml_dict, graph)
+    maxrepr = max([len(all_reps[key]) for key in all_reps.keys()])
+    rep_max = [rep for rep in all_reps.keys() if len(all_reps[rep]) == maxrepr][0]
+    print(rep_max,doml_dict[rep_max],all_reps[rep_max],maxrepr)
+    all_reps1 = [[rep] for rep in all_reps.keys()]
+    visualise_graph(graph, all_reps1, groups = False)
     #choose from each cliq the cluster with the most domains as representative
     # reps = []
     # for cliq in cliqs:
