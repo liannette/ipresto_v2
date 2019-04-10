@@ -266,14 +266,14 @@ def find_all_representatives(d_l_dict, g):
             else:
                 #merge represented clusters in a new representative
                 newvals = []
-                for val in vals:
+                for old_rep in vals:
                     #if statement for bgcs already represented by this 
                     #representative and thus no longer in all_reps_dict
-                    if val in all_reps_dict.keys():
-                        newv = [v for v in all_reps_dict[val]]
+                    if old_rep in all_reps_dict.keys():
+                        newv = [v for v in all_reps_dict[old_rep]]
                         newvals += newv
-                        del all_reps_dict[val]
-                all_reps_dict[key] = newvals
+                        del all_reps_dict[old_rep]
+                all_reps_dict[key] = set(newvals)
         i+=1
     print("Done. {} representatives chosen for {} bgcs".format(\
         len(all_reps_dict.keys()), g.number_of_nodes()))
@@ -301,7 +301,8 @@ def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
         for bgc in rep_dict.keys():
             rep.write(">{}\n{}\n".format(bgc, ','.join(rep_dict[bgc])))
             filt.write("{},{}\n".format(bgc, ','.join(dom_dict[bgc])))
-    print("Filtered clusterfile: {}".format(filt_file))
+    print("Filtered clusterfile containing {} bgcs: {}".format(\
+        len(uniq_list)+len(rep_dict.keys()),filt_file))
     print("Representative bgcs file: {}".format(rep_file))
     return rep_file
 
