@@ -10,26 +10,21 @@ Usage:
 python3 bgc_to_pfam.py -h
 
 Example usage:
-python3 filter_bgcs.py
-
-Notes:
+python3 filter_bgcs.py -i ../testdata_domains/testdata_clusterfile.csv
+    -o ../testdata_domains/ -c 20
 
 Layout:
 get_commands
 read_clusterfile
 calc_adj_index
-
-TODO:
-make functions that:
--read clusterfile and write a new filtered file without clusters with less
-    domains than min_doms
--calculate Adjacency dist between two domains/see if one is contained within
-    the other
--loop through every combination of domains and return dist in a matrix
--create graphs from the matrix using some cutoff (using igraph, networkx?)
--choose representatives
--write file with just representatives and one with representatives linked
-    to the bgcs that are filtered out
+is_contained
+generate_edges
+generate_edge
+generate_graph
+visualise_graph
+find_representatives
+find_all_representatives
+write_filtered_bgcs
 
 Required:
 networkx (https://github.com/networkx/networkx)
