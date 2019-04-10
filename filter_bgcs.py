@@ -219,7 +219,6 @@ def find_representatives(clqs, d_l_dict, graph):
         longest clusters then the cluster with the least connections is
         chosen (to preserve most information).
     '''
-    random.seed(0)
     reps_dict = OrderedDict()
     dels = set() #set of nodes for which a representative has been found
     clqs = sorted(clqs, key=len, reverse=True)
@@ -232,6 +231,7 @@ def find_representatives(clqs, d_l_dict, graph):
                 if doml == maxdoml]
             if len(clus_maxlen) > 1:
                 min_degr = min([deg for clus, deg in graph.degree(clus_maxlen)])
+                random.seed(1)
                 rep = random.choice([clus for clus in clus_maxlen \
                     if graph.degree(clus) == min_degr])
             else:
@@ -251,17 +251,17 @@ def find_all_representatives(d_l_dict, g):
     graph: networkx graph structure containing the cliques
     all_reps_dict: dict of {representative:[represented]}
     '''
+    print('\nFiltering out similar bgcs.')
     all_reps_dict = {}
     subg = g.subgraph(g.nodes)
-    #make a while loop after testing while subg.number_of_edges != 0
-    
-    for i in range(5):
-        print('iteration {}, edges left: {}'.format(i,subg.number_of_edges()))
+    i = 0
+    while subg.number_of_edges() != 0:
+        print(\
+        '  iteration {}, edges (similarities between bgcs) left: {}'.format(\
+            i,subg.number_of_edges()))
         cliqs = nx.algorithms.clique.find_cliques(subg)
         cliqs = sorted(cliqs, key=len)
-        print(len(cliqs))
         cliqs = [cl for cl in cliqs if len(cl) > 1]
-        print(len(cliqs))
         reps_dict = find_representatives(cliqs, d_l_dict, subg)
         subg = subg.subgraph(reps_dict.keys())
         #merge reps_dict with all_reps_dict
@@ -270,65 +270,60 @@ def find_all_representatives(d_l_dict, g):
                 all_reps_dict[key] = vals
             else:
                 #merge represented clusters in a new representative
-                newvals = [v for val in vals for v in all_reps_dict[val] \
-                    if val in all_reps_dict.keys()]
-                #if statement for bgcs already represented by this 
-                #representative and thus no longer in all_reps_dict
-                for remove_key in vals:
-                    del all_reps_dict[remove_key]
+                newvals = []
+                for val in vals:
+                    #if statement for bgcs already represented by this 
+                    #representative and thus no longer in all_reps_dict
+                    if val in all_reps_dict.keys():
+                        newv = [v for v in all_reps_dict[val]]
+                        newvals += newv
+                        del all_reps_dict[val]
                 all_reps_dict[key] = newvals
+        i+=1
+    print("Done. {} representatives chosen for {} bgcs".format(\
+        len(all_reps_dict.keys()), g.number_of_nodes()))
     return all_reps_dict
+
+def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
+    '''Returns filepaths to filtered_clusterfile.csv and representatives.csv
+
+    uniq_list: list of strings, bgcs that are not similar to others
+    rep_dict: dict of {representative:[represented]}, links representative
+        bgcs to bgcs that are filtered out.
+    Writes two files:
+        -filtered_clusterfile.csv: same as clusterfile.csv but without bgcs
+        that are filtered out
+        -representatives.csv: all the bgcs and their representatives as
+        >representative\nbgc1,bgc2\n . also uniq_bgcs are there but just as
+        >uniq_bgc1\n>uniq_bgc2\n
+    '''
+    rep_file = '{}_representative_bgcs.txt'.format(\
+        filter_file.split('_filtered_clusterfile.csv')[0])
+    with open(filter_file, 'w') as filt, open(rep_file, 'w') as rep:
+        for bgc in uniq_list:
+            rep.write(">{}\n".format(bgc))
+            filt.write("{},{}\n".format(bgc, ','.join(dom_dict[bgc])))
+        for bgc in rep_dict.keys():
+            rep.write(">{}\n{}\n".format(bgc, ','.join(rep_dict[bgc])))
+            filt.write("{},{}\n".format(bgc, ','.join(dom_dict[bgc])))
+    print("Filtered clusterfile: {}".format(filt_file))
+    print("Representative bgcs file: {}".format(rep_file))
+    return rep_file
 
 if __name__ == "__main__":
     cmd = get_commands()
-    random.seed(0)
+    random.seed(1)
+    #infile is the clusterfile.csv
     #read_clusterfile filters out bgcs with less than min_dom domains
     dom_dict, doml_dict = read_clusterfile(cmd.in_file, cmd.min_doms, \
         cmd.verbose)
+    filt_file = '{}_filtered_clusterfile.csv'.format(\
+        cmd.in_file.split('_clusterfile.csv')[0])
     clus_names = list(dom_dict.keys())#[0:300] #make list so bgcs have an index
-    edges = generate_edges(clus_names, dom_dict, cmd.sim_cutoff, cmd.cores)
-    graph = generate_graph(edges)
-    cliqs = nx.algorithms.clique.find_cliques(graph)
-    cliqs = sorted(cliqs, key=len)
-    reps_dict = find_representatives(cliqs, doml_dict, graph)
-    print(len(reps_dict.keys()))
-    reps = [[rep] for rep in reps_dict.keys()]
-    # visualise_graph(graph,reps)
-    rep_g = graph.subgraph(reps_dict.keys())
-    r_cl = nx.algorithms.clique.find_cliques(rep_g)
-    r_cl = [cl for cl in r_cl if len(cl) > 1]
-    r_cl = sorted(r_cl,key=len)
-    print([len(cl) for cl in r_cl],len(r_cl))
-    # visualise_graph(rep_g,r_cl)
-    reps_reps_dict = find_representatives(r_cl, doml_dict, graph)
-    print(reps_reps_dict)
-    # print('ARGH01000000_KB894962.1.cluster038:',graph.adj['ARGH01000000_KB894962.1.cluster038'])
+    similar_bgcs = generate_edges(clus_names, dom_dict, cmd.sim_cutoff,\
+        cmd.cores)
+    graph = generate_graph(similar_bgcs)
+    uniq_bgcs = [clus for clus in clus_names if not clus in graph.nodes()]
     all_reps = find_all_representatives(doml_dict, graph)
-    maxrepr = max([len(all_reps[key]) for key in all_reps.keys()])
-    rep_max = [rep for rep in all_reps.keys() if len(all_reps[rep]) == maxrepr][0]
-    print(rep_max,doml_dict[rep_max],all_reps[rep_max],maxrepr)
-    all_reps1 = [[rep] for rep in all_reps.keys()]
-    visualise_graph(graph, all_reps1, groups = False)
-    #choose from each cliq the cluster with the most domains as representative
-    # reps = []
-    # for cliq in cliqs:
-        # domlist = [(clus,doml_dict[clus]) for clus in cliq]
-        # # domlens = [doml_dict[clus] for clus in cliq]
-        # maxdoml = max([doms[1] for doms in domlist])
-        # clus_maxlen = random.choice([clus for clus, doml in domlist \
-            # if doml == maxdoml])
-        # reps.append(clus_maxlen)
-        # # print(maxdoml, clus_maxlen, domlist)
-    # dupl_reps = set(rep for rep in reps if reps.count(rep) > 1)
-    # print(len(set(reps)), len(dupl_reps), len(reps))
-    # reps = list(set(reps))
-    # # reps_edges = generate_edges(reps,dom_dict,cmd.sim_cutoff,cmd.cores)
-    # # reps_graph = generate_graph(reps_edges)
-    # reps_graph = graph.subgraph(reps)
-    # print("nodes, edges of reps_graph: {}, {}".format(reps_graph.number_of_nodes(),reps_graph.number_of_edges()))
-    # reps_cliqs = nx.algorithms.clique.find_cliques(reps_graph)
-    # visualising, maybe with subplot plot all different cliques/networks
-    
-    # visualise_graph(reps_graph, reps_cliqs)
-    
-
+    all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps, dom_dict, \
+        filt_file)
