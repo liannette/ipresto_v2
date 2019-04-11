@@ -72,7 +72,7 @@ def get_commands():
     return parser.parse_args()
 
 def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
-    min_genes, verbose):
+    min_genes, cores, verbose):
     '''Convert gbk files from input folder to fasta files for each gbk file
 
     input_folder, outpu_folder: str
@@ -93,24 +93,19 @@ def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
         subprocess.check_call("mkdir {}".format(out_fasta), shell = True)
     print("\nProcessing gbk files into fasta files.")
     files = iglob(os.path.join(input_folder, "*.gbk"))
-    processed = 0
-    excluded = 0
-    filtered = 0
+    done = []
+    pool = Pool(cores, maxtasksperchild=20)
     for file_path in files:
-        if processed % 1000 == 0:
-            print(" converted {} files".format(processed))
-        file_name = os.path.split(file_path)[1]
-        if any([word in file_name for word in exclude]):
-            excluded += 1
-            continue
-        else:
-            done = convert_gbk2fasta(file_path, out_fasta, exclude_contig_edge,
-                min_genes, verbose)
-            if not done:
-                filtered +=1
-        processed +=1
+        pool.apply_async(convert_gbk2fasta, args=(file_path, out_fasta,\
+            exclude_contig_edge, min_genes, exclude, verbose), \
+            callback=lambda x: done.append(x))
+    pool.close()
+    pool.join()
+    processed = len([val for val in done if val])
+    excluded = len([val for val in done if val == False])
+    filtered = len([val for val in done if val == None])
     print("Processed {} gbk files into {} fasta files.".format(\
-        processed+excluded, processed-filtered))
+        processed+excluded+filtered, processed))
     print(" excluded {} files containing {}".format(excluded,\
         ' or '.join(exclude)))
     print(" filtered {} files that didn't pass constraints".format(\
@@ -118,15 +113,21 @@ def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
     return(out_fasta)
 
 def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
-    verbose):
+    exclude, verbose):
     '''Convert one gbk file to a fasta file in out_folder
 
     file_path, out_folder: strings
     exclude_contig_edge: bool
     min_genes: int
     verbose: bool, print additional info to stdout
+
+    Returns True for a successful conversion to fasta, None if there is a
+    contig edge or min_genes is not passed. False is returned if any of
+    the exclude list is in the filename
     '''
     file_name = os.path.split(file_path)[1]
+    if any([word in file_name for word in exclude]):
+        return False
     name = file_name.strip('.gbk')
     outfile = os.path.join(out_folder, '{}.fasta'.format(name))
     seqs = OrderedDict()
@@ -306,7 +307,7 @@ if __name__ == "__main__":
     cmd = get_commands()
 
     fasta_folder = process_gbks(cmd.in_folder, cmd.out_folder, cmd.exclude,
-        cmd.exclude_contig_edge, cmd.min_genes, cmd.verbose)
+        cmd.exclude_contig_edge, cmd.min_genes, cmd.cores, cmd.verbose)
     dom_folder = hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose,
         cmd.cores)
     parse_dom_wrapper(dom_folder, cmd.out_folder, cmd.domain_overlap_cutoff,
