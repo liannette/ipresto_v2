@@ -333,7 +333,7 @@ def read_clusterfile(infile, m_doms, verbose):
     verbose: bool, if True print additional info
     clusters with less than m_doms domains are not returned
     """
-    print("\nFiltering clusterfile")
+    print("\nReading {}".format(infile))
     filtered = 0
     with open(infile, 'r') as inf:
         clus_dict = OrderedDict()
@@ -353,8 +353,9 @@ def read_clusterfile(infile, m_doms, verbose):
                 len_dict[clus] = ldoms
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
-    print("Done. Keeping {} clusters".format(len(clus_dict)))
-    print(" {} clusters have less than {} domains".format(filtered,m_doms))
+    print("Done. Read {} clusters".format(len(clus_dict)))
+    print(" {} clusters have less than {} domains and are excluded".format(\
+        filtered,m_doms))
     return clus_dict, len_dict
 
 def calc_adj_index(clus1, clus2):
@@ -544,6 +545,7 @@ def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
 if __name__ == "__main__":
     cmd = get_commands()
 
+    #generating clusters as strings of domains
     fasta_folder = process_gbks(cmd.in_folder, cmd.out_folder, cmd.exclude,
         cmd.exclude_contig_edge, cmd.min_genes, cmd.cores, cmd.verbose)
     dom_folder = hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose,
@@ -551,6 +553,7 @@ if __name__ == "__main__":
     clus_file = parse_dom_wrapper(dom_folder, cmd.out_folder, \
         cmd.domain_overlap_cutoff, cmd.verbose)
 
+    #filtering clusters based on similarity
     random.seed(1)
     dom_dict, doml_dict = read_clusterfile(clus_file, cmd.min_doms, \
         cmd.verbose)
