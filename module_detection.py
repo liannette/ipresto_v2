@@ -101,22 +101,58 @@ def read_clusterfile(infile, m_doms, verbose):
         filtered,m_doms))
     return clus_dict, len_dict
 
-def prep_clus_md(clusdict, outfolder, verbose):
-    '''Writes md_prep_clusterfile.csv
+def remove_infr_doms(clusdict, verbose):
+    '''Returns clusdict with domains replaced  with - if they occur < 3
 
     clusdict: dict of {cluster:[domains]}
     verbose: bool, if True print additional info
 
-    Remove domains that occur less than thrice, remove duplicate domains
-        in a cluster and replace those with a '-' and add it at end of clus
+    Deletes clusters with 1 unique dom
     '''
+    print('\nRemoving domains that occur less than 3 times')
     domcounter = Counter()
-    domcounter.update([v for vals in clusdict.values() for v in vals])
-    deldoms = [key for key in domcounter if domcounter[key] < 3]
+    domcounter.update([v for vals in clusdict.values() for v in vals \
+        if not v == '-'])
+    deldoms = [key for key in domcounter if domcounter[key] <= 2]
     clus_no_deldoms = {}
     for k,v in clusdict.items():
-        newv = [dom for dom in v if not dom in deldoms]
-        clus_no_deldoms[k] = newv
+        newv = ['-' if dom in deldoms else dom for dom in v]
+        doml = len({v for v in newv if not v == '-'})
+        if doml > 1:
+            clus_no_deldoms[k] = newv
+        else:
+            if verbose:
+                print('  {} removed as it has less than 2 domains'.format(k))
+    print('Continuing with {} bgcs that have more than 1 domain left'.format(\
+        len(clus_no_deldoms)))
+    return clus_no_deldoms
+
+def remove_dupl_doms(clusdict):
+    '''
+    Replaces duplicate domains in a cluster with '-', writes domain at the end
+
+    clusdict: dict of {cluster:[domains]}
+    '''
+    clus_no_dupl = {}
+    for k,v in clusdict.items():
+        domc = Counter(v)
+        dupl = [dom for dom in domc if domc[dom] > 1 if not dom == '-']
+        if dupl:
+            newv = ['-' if dom in dupl else dom for dom in v]
+            for dom in dupl:
+                newv += ['-',dom]
+        else:
+            newv = v
+        clus_no_dupl[k] = newv
+    return clus_no_dupl
+
+def count_adj(clusdict, verbose):
+    '''Counts all adjacency interactions between domains
+
+    clusdict: dict of {cluster:[domains]}
+    verbose: bool, if True print additional info
+    '''
+    
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -125,4 +161,8 @@ if __name__ == "__main__":
 
     f_clus_dict, f_doml_dict = read_clusterfile(infile, cmd.min_doms, \
         cmd.verbose)
-    
+    f_clus_dict_rem1 = remove_infr_doms(f_clus_dict, cmd.verbose)
+    # clusters = list(f_clus_dict_rem1.keys())
+    # for i in range(10):
+        # subdict = {clusters[i] : f_clus_dict_rem1[clusters[i]]}
+        # print(remove_dupl_doms(subdict))
