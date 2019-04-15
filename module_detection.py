@@ -154,26 +154,35 @@ def count_adj(counts, cluster, verbose):
     '''
     #for multiprocessing, from concurrent.futures ProcessPoolExecutor?
     for i, dom in enumerate(cluster):
-        if not dom == '-':
-            if i == 0:
-                edge = 1
-                adj = [cluster[1]]
-            elif i == len(cluster)-1:
-                edge = 1
-                adj = [cluster[i-1]]
-            else:
-                edge = 2
-                adj = [cluster[i-1],cluster[i+1]]
-            print('Domain: {} , Edges: {}, Adj:{}'.format(dom,edge,', '.join(adj)))
-            counts[dom]['count'] += 1
-            counts[dom]['edge'] += edge
-            for ad in adj:
-                if not ad == '-':
+        if i == 0:
+            edge = 1
+            adj = [cluster[1]]
+        elif i == len(cluster)-1:
+            edge = 1
+            adj = [cluster[i-1]]
+        else:
+            edge = 2
+            adj = [cluster[i-1],cluster[i+1]]
+            if adj[0] == adj[1] and adj[0] != '-':
+                #B2 and N2 counts
+                prevdom = cluster[i-1]
+                counts[prevdom]['N1'] -= 2
+                counts[prevdom]['N2'] += 1
+                if dom != '-' and dom != prevdom:
+                    counts[prevdom]['B1'][dom] -= 2
                     try:
-                        counts[dom][ad] += 1
+                        counts[prevdom]['B2'][dom] += 1
                     except TypeError:
-                        counts[dom][ad] = 1
-    print(cluster)
+                        counts[prevdom]['B2'][dom] = 1
+        if not dom == '-':
+            counts[dom]['count'] += 1
+            counts[dom]['N1'] += edge
+            for ad in adj:
+                if ad != '-' and ad != dom:
+                    try:
+                        counts[dom]['B1'][ad] += 1
+                    except TypeError:
+                        counts[dom]['B1'][ad] = 1
 
 def makehash():
     '''Function to initialise nested dict
@@ -181,43 +190,44 @@ def makehash():
     return defaultdict(makehash)
 
 def count_interactions(clusdict, verbose):
-    '''
+    '''Count all adj and coloc interactions between all domains in clusdict
+
+    clusdict: dict of {cluster:[domains]}
+    verbose: bool, if True print additional info
+    Returns two dicts, one dict with adj counts and one with coloc counts
     '''
     all_doms = {v for val in clusdict.values() for v in val}
     all_doms.remove('-')
-    dcounts = makehash()
+    #initialising adj_counts dict.
+    adj_counts = makehash()
     for d in all_doms:
-        for v in ['count','edge']:
-            dcounts[d][v] = 0
-    print(dcounts)
+        for v in ['count','N1','N2']:
+            adj_counts[d][v] = 0
+        for w in ['B1','B2']:
+            adj_counts[d][w] = makehash()
+        #N1: positions adj to one domA, N2: positions adj to two domA
+        #B1: amount of domB adj to one domA, B2: positions adj to two domA
     for clus in clusdict.values():
-        count_adj(dcounts, clus, verbose)
-    print(dcounts)
+        count_adj(adj_counts, clus, verbose)
+    return adj_counts
 
 if __name__ == "__main__":
     cmd = get_commands()
     #adjust later
     infile = os.path.join(cmd.out_folder, 'testdata_filtered_clusterfile.csv')
 
-    f_clus_dict, f_doml_dict = read_clusterfile(infile, cmd.min_doms, \
-        cmd.verbose)
-    f_clus_dict_rem1 = remove_infr_doms(f_clus_dict, cmd.verbose)
-    clusters = list(f_clus_dict_rem1.keys())
+    f_clus_dict = read_clusterfile(infile, cmd.min_doms, \
+        cmd.verbose)[0]
+    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.verbose)
+    clusters = list(f_clus_dict_rem.keys())
     # for i in range(10):
         # subdict = {clusters[i] : f_clus_dict_rem1[clusters[i]]}
         # print(remove_dupl_doms(subdict))
-    x=5
-    testdict = {clus : f_clus_dict_rem1[clus] for clus in clusters[:x]}
-    # testclus = f_clus_dict_rem1[clusters[0]]
-    # def_val = ['count', 'edge']
-    # t=set(testclus)
-    # t.remove('-')
-    # testclus_c = makehash()
-    # for c in t:
-        # for v in def_val:
-            # testclus_c[c][v] = 0
-    # print(testclus_c)
-    # count_adj(testclus_c, testclus,cmd.verbose)
-    # print(testclus_c)
-    count_interactions(testdict, cmd.verbose)
+    x=10
+    testdict = {clus : f_clus_dict_rem[clus] for clus in clusters[:x]}
+
+    dom_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
+    # print(dom_counts)
+    print(dom_counts['RCC1'])
+    print(dom_counts['Big_3_5'])
     
