@@ -35,12 +35,12 @@ graph generation with sign interactions and iteration
 import argparse
 from Bio import SeqIO
 from Bio import SearchIO
-from collections import OrderedDict, Counter
+from collections import OrderedDict, Counter, defaultdict
 from functools import partial
 from glob import glob, iglob
 from itertools import combinations
 from multiprocessing import Pool, cpu_count
-import networkx as nx
+#import networkx as nx
 import os
 import random
 import subprocess
@@ -146,13 +146,53 @@ def remove_dupl_doms(clusdict):
         clus_no_dupl[k] = newv
     return clus_no_dupl
 
-def count_adj(clusdict, verbose):
-    '''Counts all adjacency interactions between domains
+def count_adj(counts, cluster, verbose):
+    '''Counts all adjacency interactions between domains in a cluster
 
-    clusdict: dict of {cluster:[domains]}
+    cluster: list of strings, domains
     verbose: bool, if True print additional info
     '''
-    
+    #for multiprocessing, from concurrent.futures ProcessPoolExecutor?
+    for i, dom in enumerate(cluster):
+        if not dom == '-':
+            if i == 0:
+                edge = 1
+                adj = [cluster[1]]
+            elif i == len(cluster)-1:
+                edge = 1
+                adj = [cluster[i-1]]
+            else:
+                edge = 2
+                adj = [cluster[i-1],cluster[i+1]]
+            print('Domain: {} , Edges: {}, Adj:{}'.format(dom,edge,', '.join(adj)))
+            counts[dom]['count'] += 1
+            counts[dom]['edge'] += edge
+            for ad in adj:
+                if not ad == '-':
+                    try:
+                        counts[dom][ad] += 1
+                    except TypeError:
+                        counts[dom][ad] = 1
+    print(cluster)
+
+def makehash():
+    '''Function to initialise nested dict
+    '''
+    return defaultdict(makehash)
+
+def count_interactions(clusdict, verbose):
+    '''
+    '''
+    all_doms = {v for val in clusdict.values() for v in val}
+    all_doms.remove('-')
+    dcounts = makehash()
+    for d in all_doms:
+        for v in ['count','edge']:
+            dcounts[d][v] = 0
+    print(dcounts)
+    for clus in clusdict.values():
+        count_adj(dcounts, clus, verbose)
+    print(dcounts)
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -162,7 +202,22 @@ if __name__ == "__main__":
     f_clus_dict, f_doml_dict = read_clusterfile(infile, cmd.min_doms, \
         cmd.verbose)
     f_clus_dict_rem1 = remove_infr_doms(f_clus_dict, cmd.verbose)
-    # clusters = list(f_clus_dict_rem1.keys())
+    clusters = list(f_clus_dict_rem1.keys())
     # for i in range(10):
         # subdict = {clusters[i] : f_clus_dict_rem1[clusters[i]]}
         # print(remove_dupl_doms(subdict))
+    x=5
+    testdict = {clus : f_clus_dict_rem1[clus] for clus in clusters[:x]}
+    # testclus = f_clus_dict_rem1[clusters[0]]
+    # def_val = ['count', 'edge']
+    # t=set(testclus)
+    # t.remove('-')
+    # testclus_c = makehash()
+    # for c in t:
+        # for v in def_val:
+            # testclus_c[c][v] = 0
+    # print(testclus_c)
+    # count_adj(testclus_c, testclus,cmd.verbose)
+    # print(testclus_c)
+    count_interactions(testdict, cmd.verbose)
+    
