@@ -145,13 +145,12 @@ def remove_dupl_doms(cluster):
         newclus = cluster
     return newclus
 
-def count_adj(counts, cluster, verbose):
+def count_adj(counts, cluster):
     '''Counts all adjacency interactions between domains in a cluster
 
+    counts: nested dict { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
     cluster: list of strings, domains
-    verbose: bool, if True print additional info
     '''
-    #for multiprocessing, from concurrent.futures ProcessPoolExecutor?
     for i, dom in enumerate(cluster):
         if i == 0:
             edge = 1
@@ -183,6 +182,27 @@ def count_adj(counts, cluster, verbose):
                     except TypeError:
                         counts[dom]['B1'][ad] = 1
 
+def count_coloc(counts, cluster):
+    '''Counts all colocalisation interactions between domains in a cluster
+
+    counts: nested dict { dom1:{ count:x,N1:y,B1:{dom2:v,dom3:w } } }
+    cluster: list of strings, domains
+    verbose: bool, if True print additional info
+    '''
+    N1 = len(cluster)-1
+    for dom in cluster:
+        if not dom == '-':
+            counts[dom]['count'] += 1
+            counts[dom]['N1'] += N1
+            coloc = set(cluster)
+            coloc.remove('-')
+            coloc.remove(dom)
+            for colo in coloc:
+                try:
+                    counts[dom]['B1'][colo] += 1
+                except TypeError:
+                    counts[dom]['B1'][colo] = 1
+
 def makehash():
     '''Function to initialise nested dict
     '''
@@ -194,10 +214,14 @@ def count_interactions(clusdict, verbose):
     clusdict: dict of {cluster:[domains]}
     verbose: bool, if True print additional info
     Returns two dicts, one dict with adj counts and one with coloc counts
+    adj counts:
+        { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
+    coloc counts:
+        { dom1:{ count:x,N1:y,B1:{dom2:v,dom3:w } } }
     '''
     all_doms = {v for val in clusdict.values() for v in val}
     all_doms.remove('-')
-    #initialising adj_counts dict.
+    #initialising count dicts
     adj_counts = makehash()
     for d in all_doms:
         for v in ['count','N1','N2']:
@@ -206,9 +230,19 @@ def count_interactions(clusdict, verbose):
             adj_counts[d][w] = makehash()
         #N1: positions adj to one domA, N2: positions adj to two domA
         #B1: amount of domB adj to one domA, B2: positions adj to two domA
+    coloc_counts = makehash()
+    for d in all_doms:
+        for v in ['count','N1']:
+            coloc_counts[d][v] = 0
+        coloc_counts[d]['B1'] = makehash()
+        #N1: all possible coloc positions in a cluster, cluster lenght - 1
+        #B1: amount of domB coloc with domA
     for clus in clusdict.values():
-        count_adj(adj_counts, clus, verbose)
-    return adj_counts
+        count_adj(adj_counts, clus)
+        filt_clus = remove_dupl_doms(clus)
+        print(filt_clus)
+        count_coloc(coloc_counts, filt_clus)
+    return(adj_counts, coloc_counts)
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -222,11 +256,12 @@ if __name__ == "__main__":
     # for i in range(10):
         # subdict = {clusters[i] : f_clus_dict_rem1[clusters[i]]}
         # print(remove_dupl_doms(subdict))
-    x=10
+    x=1
     testdict = {clus : f_clus_dict_rem[clus] for clus in clusters[:x]}
 
-    dom_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
-    # print(dom_counts)
-    #print(dom_counts['RCC1'])
-    #print(dom_counts['Big_3_5'])
-    
+    # adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
+    # print(adj_counts)
+    #print(adj_counts['RCC1'])
+    #print(adj_counts['Big_3_5'])
+    adj_counts, c_counts = count_interactions(testdict, cmd.verbose)
+    print(c_counts)
