@@ -14,6 +14,8 @@ Notes:
 
 Layout:
 get_commands
+read_clusterfile
+remove_infr_doms
 
 Required:
 python 3.6
@@ -40,7 +42,7 @@ from functools import partial
 from glob import glob, iglob
 from itertools import combinations
 from multiprocessing import Pool, cpu_count
-#import networkx as nx
+import networkx as nx
 import os
 import random
 import subprocess
@@ -127,24 +129,21 @@ def remove_infr_doms(clusdict, verbose):
         len(clus_no_deldoms)))
     return clus_no_deldoms
 
-def remove_dupl_doms(clusdict):
+def remove_dupl_doms(cluster):
     '''
     Replaces duplicate domains in a cluster with '-', writes domain at the end
 
-    clusdict: dict of {cluster:[domains]}
+    cluster: list of strings, domain list
     '''
-    clus_no_dupl = {}
-    for k,v in clusdict.items():
-        domc = Counter(v)
-        dupl = [dom for dom in domc if domc[dom] > 1 if not dom == '-']
-        if dupl:
-            newv = ['-' if dom in dupl else dom for dom in v]
-            for dom in dupl:
-                newv += ['-',dom]
-        else:
-            newv = v
-        clus_no_dupl[k] = newv
-    return clus_no_dupl
+    domc = Counter(cluster)
+    dupl = [dom for dom in domc if domc[dom] > 1 if not dom == '-']
+    if dupl:
+        newclus = ['-' if dom in dupl else dom for dom in cluster]
+        for dom in dupl:
+            newclus += ['-',dom]
+    else:
+        newclus = cluster
+    return newclus
 
 def count_adj(counts, cluster, verbose):
     '''Counts all adjacency interactions between domains in a cluster
@@ -228,6 +227,6 @@ if __name__ == "__main__":
 
     dom_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     # print(dom_counts)
-    print(dom_counts['RCC1'])
-    print(dom_counts['Big_3_5'])
+    #print(dom_counts['RCC1'])
+    #print(dom_counts['Big_3_5'])
     
