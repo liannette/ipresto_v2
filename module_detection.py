@@ -21,6 +21,7 @@ Required:
 python 3.6
 Biopython
 networkx
+scipy
 
 To do:
 preprocess clusters (remove duplicates pfams, remove domains that only occur
@@ -40,12 +41,14 @@ from Bio import SearchIO
 from collections import OrderedDict, Counter, defaultdict
 from functools import partial
 from glob import glob, iglob
-from itertools import combinations
+from itertools import combinations, product
 from multiprocessing import Pool, cpu_count
 import networkx as nx
 import os
 import random
+from statsmodels.stats.multitest import multipletests
 import subprocess
+from sympy import binomial as ncr
 
 def get_commands():
     parser = argparse.ArgumentParser(description="Detects sub-clusters in \
@@ -195,7 +198,10 @@ def count_coloc(counts, cluster):
             counts[dom]['count'] += 1
             counts[dom]['N1'] += N1
             coloc = set(cluster)
-            coloc.remove('-')
+            try:
+                coloc.remove('-')
+            except KeyError:
+                pass
             coloc.remove(dom)
             for colo in coloc:
                 try:
@@ -219,6 +225,7 @@ def count_interactions(clusdict, verbose):
     coloc counts:
         { dom1:{ count:x,N1:y,B1:{dom2:v,dom3:w } } }
     '''
+    print('\nCounting colocalisation and adjacency interactions')
     all_doms = {v for val in clusdict.values() for v in val}
     all_doms.remove('-')
     #initialising count dicts
@@ -230,6 +237,7 @@ def count_interactions(clusdict, verbose):
             adj_counts[d][w] = makehash()
         #N1: positions adj to one domA, N2: positions adj to two domA
         #B1: amount of domB adj to one domA, B2: positions adj to two domA
+
     coloc_counts = makehash()
     for d in all_doms:
         for v in ['count','N1']:
@@ -237,12 +245,75 @@ def count_interactions(clusdict, verbose):
         coloc_counts[d]['B1'] = makehash()
         #N1: all possible coloc positions in a cluster, cluster lenght - 1
         #B1: amount of domB coloc with domA
+
     for clus in clusdict.values():
         count_adj(adj_counts, clus)
         filt_clus = remove_dupl_doms(clus)
-        print(filt_clus)
         count_coloc(coloc_counts, filt_clus)
     return(adj_counts, coloc_counts)
+
+def calc_adj_pval_wrapper(count_dict, clusdict, cores):
+    '''Returns list of tuples of corrected pvals for each domain pair
+
+    counts: nested dict { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
+    clusdict: dict of {cluster:[domains]}
+    '''
+    #NB. Nall for coloc_pval should be len(remove_dupl_doms(values))
+    print('\nCalculating adjacency pvalues')
+    N = sum([len(values) for values in clusdict.values()])
+    pool = Pool(cores, maxtasksperchild=20)
+    pvals = pool.map(partial(calc_adj_pval, counts=count_dict, Nall=N), \
+        count_dict.items())
+    #remove Nones and unlist
+    pvals = [lst for lst in pvals if lst]
+    pvals = sorted([tup for lst in pvals for tup in lst])
+    #Benjamini-Yekutieli correction
+    pvals_adj = multipletests(list(zip(*pvals))[2], method='fdr_by')
+    #adding adjusted pvals and choosing max
+    print(pvals)
+    return pvals
+
+def calc_adj_pval(domval_pair, counts, Nall):
+    '''Returns a list of sorted tuples (domA,domB,pval)
+    
+    domA: string of domain name
+    vals: dict of domA interaction info
+        {count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w}}
+    counts: nested dict { domA:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
+    '''
+    domA, vals = domval_pair
+    #domains without interactions do not end up in pvals
+    if not vals['B1'] and not vals['B2']:
+        return
+    pvals = []
+    count = vals['count']
+    Ntot = Nall - count
+    N1 = vals['N1']
+    N2 = vals['N2']
+    N0 = Ntot - N1 - N2
+    interactions = vals['B1'].keys() | vals['B2'].keys()
+    for domB in interactions:
+        if domB not in vals['B2']:
+            B1 = vals['B1'][domB]
+            Btot = counts[domB]['count']
+            pval = float(1 - sum([ncr(N0,(Btot-d)) * ncr(N1, d) \
+                for d in range(B1)]) / ncr(Ntot,Btot))
+        elif vals['B1'][domB] == 0:
+            B2 = vals['B2'][domB]
+            Btot = counts[domB]['count']
+            pval = float(1 - sum([ncr(N0,(Btot-d)) * ncr(N2, d) \
+                for d in range(B2)]) / ncr(Ntot,Btot))
+        else:
+            B1 = vals['B1'][domB]
+            B2 = vals['B2'][domB]
+            Btot = counts[domB]['count']
+            pval = float(\
+                1 - sum([ncr(N0,Btot-d1-d2) * ncr(N1,d1) * ncr(N2,d2) \
+                for d1,d2 in product(range(B1+1),range(B2+1)) \
+                if d1+d2 != B1+B2]) / ncr(Ntot,Btot))
+        ab_int = sorted((domA,domB))
+        pvals.append((ab_int[0],ab_int[1],pval))
+    return pvals
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -256,12 +327,15 @@ if __name__ == "__main__":
     # for i in range(10):
         # subdict = {clusters[i] : f_clus_dict_rem1[clusters[i]]}
         # print(remove_dupl_doms(subdict))
-    x=1
+    x=10
     testdict = {clus : f_clus_dict_rem[clus] for clus in clusters[:x]}
 
-    # adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
+    adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
+    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores)
     # print(adj_counts)
     #print(adj_counts['RCC1'])
     #print(adj_counts['Big_3_5'])
-    adj_counts, c_counts = count_interactions(testdict, cmd.verbose)
-    print(c_counts)
+    # adj_counts, c_counts = count_interactions(testdict, cmd.verbose)
+    # print('\n',sorted([(key,c_counts[key]['count'],c_counts[key]['N1']) for key in c_counts],key=lambda x: x[1]))
+    # print([(key,c_counts[key]['count'],c_counts[key]['N1']) for key in c_counts \
+        # if c_counts[key]['count'] > len(f_clus_dict_rem.keys())])
