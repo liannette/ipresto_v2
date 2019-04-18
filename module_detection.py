@@ -52,7 +52,7 @@ from sympy import binomial as ncr
 
 def get_commands():
     parser = argparse.ArgumentParser(description="Detects sub-clusters in \
-        bgcs represented as strings of Pfams according to Del Carratore et. \
+        BGCs represented as strings of Pfams according to Del Carratore et. \
         al (2019)")
     parser.add_argument("-i", "--in_folder", dest="in_folder", help="Input \
         directory of gbk files", required=True)
@@ -67,10 +67,13 @@ def get_commands():
         information.")
     parser.add_argument("--min_doms", dest="min_doms", default=2,
         help="The minimum amount of domains in a BGC to be included in the \
-        analysis. Default is 2 domains", type=int)
+        analysis (default: 2)", type=int)
     parser.add_argument("--sim_cutoff", dest="sim_cutoff", default=0.95,
         help="Cutoff for cluster similarity in redundancy filtering (default:\
         0.95)", type=float)
+    parser.add_argument("-p", "--pval_cutoff", dest="pval_cutoff", \
+        default = 0.1, type=float, help='P-value cutoff for determining a \
+            significant interaction in module detection (default: 0.1)')
     return parser.parse_args()
 
 def read_clusterfile(infile, m_doms, verbose):
