@@ -433,7 +433,7 @@ def generate_graph(edges):
     '''
     g = nx.Graph()
     g.add_edges_from(edges)
-    print('Generated graph with:')
+    print('\nGenerated graph with:')
     print(' {} nodes'.format(g.number_of_nodes()))
     print(' {} edges'.format(g.number_of_edges()))
     return g
@@ -479,7 +479,7 @@ def find_all_representatives(d_l_dict, g):
     '''Iterates find_representatives until there are no similar bgcs
 
     d_l_dict: dict of {clus_name:amount_of_domains(int)}
-    graph: networkx graph structure containing the cliques
+    g: networkx graph structure containing the cliques
     all_reps_dict: dict of {representative:[represented]}
     '''
     print('\nFiltering out similar bgcs.')
