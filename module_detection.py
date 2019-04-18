@@ -106,7 +106,7 @@ def read_clusterfile(infile, m_doms, verbose):
         filtered,m_doms))
     return clus_dict, len_dict
 
-def remove_infr_doms(clusdict, verbose):
+def remove_infr_doms(clusdict, m_doms, verbose):
     '''Returns clusdict with domains replaced  with - if they occur < 3
 
     clusdict: dict of {cluster:[domains]}
@@ -119,6 +119,8 @@ def remove_infr_doms(clusdict, verbose):
     domcounter.update([v for vals in clusdict.values() for v in vals \
         if not v == '-'])
     deldoms = [key for key in domcounter if domcounter[key] <= 2]
+    print('  {} domains are removed, {} domains are left'.format(\
+        len(deldoms),len(domcounter.keys())-len(deldoms)))
     clus_no_deldoms = {}
     for k,v in clusdict.items():
         newv = ['-' if dom in deldoms else dom for dom in v]
@@ -128,8 +130,8 @@ def remove_infr_doms(clusdict, verbose):
         else:
             if verbose:
                 print('  {} removed as it has less than 2 domains'.format(k))
-    print('Continuing with {} bgcs that have more than 1 domain left'.format(\
-        len(clus_no_deldoms)))
+    print(' {} clusters have less than {} domains and are excluded'.format(\
+        len(clusdict.keys()) - len(clus_no_deldoms), m_doms))
     return clus_no_deldoms
 
 def remove_dupl_doms(cluster):
@@ -252,26 +254,42 @@ def count_interactions(clusdict, verbose):
         count_coloc(coloc_counts, filt_clus)
     return(adj_counts, coloc_counts)
 
-def calc_adj_pval_wrapper(count_dict, clusdict, cores):
+def calc_adj_pval_wrapper(count_dict, clusdict, cores, verbose):
     '''Returns list of tuples of corrected pvals for each domain pair
 
     counts: nested dict { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
     clusdict: dict of {cluster:[domains]}
+    cores: int, amount of cores to use
+    verbose: bool, if True print additional information
     '''
     #NB. Nall for coloc_pval should be len(remove_dupl_doms(values))
     print('\nCalculating adjacency pvalues')
     N = sum([len(values) for values in clusdict.values()])
     pool = Pool(cores, maxtasksperchild=20)
-    pvals = pool.map(partial(calc_adj_pval, counts=count_dict, Nall=N), \
+    pvals_ori = pool.map(partial(calc_adj_pval, counts=count_dict, Nall=N), \
         count_dict.items())
-    #remove Nones and unlist
-    pvals = [lst for lst in pvals if lst]
-    pvals = sorted([tup for lst in pvals for tup in lst])
-    #Benjamini-Yekutieli correction
-    pvals_adj = multipletests(list(zip(*pvals))[2], method='fdr_by')
+    #remove Nones, unlist and sort
+    pvals_ori = [lst for lst in pvals_ori if lst]
+    pvals_ori = sorted([tup for lst in pvals_ori for tup in lst])
+    #to check if there are indeed 2 pvalues for each combination
+    check_ps = [(tup[0],tup[1]) for tup in pvals_ori]
+    check_c = Counter(check_ps)
+    pvals = [p for p in pvals_ori if check_c[(p[0],p[1])] == 2]
+    if not len(pvals) == len(pvals_ori):
+        if verbose:
+            p_excl = [p for p in pvals if check_c[(p[0],p[1])] != 2]
+            print('  error with domain pairs {}'.format(', '.join(p_excl)))
+            print('  these are excluded')
+    #Benjamini-Yekutieli multiple testing correction
+    pvals_adj = multipletests(list(zip(*pvals))[2], method='fdr_by')[1]
     #adding adjusted pvals and choosing max
-    print(pvals)
-    return pvals
+    ptups = []
+    for ab1, ab2, p1, p2 in \
+        zip(pvals[::2], pvals[1::2], pvals_adj[::2], pvals_adj[1::2]):
+        assert(ab1[0]==ab2[0] and ab1[1]==ab2[1])
+        pmax = max([p1,p2])
+        ptups.append((ab1[0],ab1[1],{'p_adj':pmax})) #make as an edge for nx
+    return ptups
 
 def calc_adj_pval(domval_pair, counts, Nall):
     '''Returns a list of sorted tuples (domA,domB,pval)
@@ -315,6 +333,69 @@ def calc_adj_pval(domval_pair, counts, Nall):
         pvals.append((ab_int[0],ab_int[1],pval))
     return pvals
 
+def calc_coloc_pval(domval_pair, counts, Nall):
+    '''Returns a list of sorted tuples (domA,domB,pval)
+    
+    domval_pair: tuple of (domA, { count:x,N1:y,B1:{dom2:v,dom3:w } })
+    counts: nested dict { domA:{ count:x,N1:y,B1:{dom2:v,dom3:w } } }
+    Nall: int, all possible positions in all clusters
+    '''
+    domA, vals = domval_pair
+    #domains without interactions do not end up in pvals
+    if not vals['B1']:
+        return
+    pvals = []
+    count = vals['count']
+    Ntot = Nall - count
+    N1 = vals['N1']
+    N0 = Ntot - N1
+    interactions = vals['B1'].keys()
+    for domB in interactions:
+        B1 = vals['B1'][domB]
+        Btot = counts[domB]['count']
+        pval = float(1 - sum([ncr(N0,(Btot-d)) * ncr(N1, d) \
+            for d in range(B1)]) / ncr(Ntot,Btot))
+        ab_int = sorted((domA,domB))
+        pvals.append((ab_int[0],ab_int[1],pval))
+    return pvals
+
+def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
+    '''Returns list of tuples of corrected pvals for each domain pair
+
+    counts: nested dict { domA:{ count:x,N1:y,B1:{dom2:v,dom3:w } } }
+    clusdict: dict of {cluster:[domains]}
+    cores: int, amount of cores to use
+    verbose: bool, if True print additional information
+    '''
+    #NB. Nall for coloc_pval should be len(remove_dupl_doms(values))
+    print('\nCalculating colocalisation pvalues')
+    N = sum([len(remove_dupl_doms(values)) for values in clusdict.values()])
+    pool = Pool(cores, maxtasksperchild=50)
+    pvals_ori = pool.map(partial(calc_coloc_pval, counts=count_dict, Nall=N), \
+        count_dict.items())
+    #remove Nones, unlist and sort
+    pvals_ori = [lst for lst in pvals_ori if lst]
+    pvals_ori = sorted([tup for lst in pvals_ori for tup in lst])
+    #to check if there are indeed 2 pvalues for each combination
+    check_ps = [(tup[0],tup[1]) for tup in pvals_ori]
+    check_c = Counter(check_ps)
+    pvals = [p for p in pvals_ori if check_c[(p[0],p[1])] == 2]
+    if not len(pvals) == len(pvals_ori):
+        if verbose:
+            p_excl = [p for p in pvals if check_c[(p[0],p[1])] != 2]
+            print('  error with domain pairs {}'.format(', '.join(p_excl)))
+            print('  these are excluded')
+    #Benjamini-Yekutieli multiple testing correction
+    pvals_adj = multipletests(list(zip(*pvals))[2], method='fdr_by')[1]
+    #adding adjusted pvals and choosing max
+    ptups = []
+    for ab1, ab2, p1, p2 in \
+        zip(pvals[::2], pvals[1::2], pvals_adj[::2], pvals_adj[1::2]):
+        assert(ab1[0]==ab2[0] and ab1[1]==ab2[1])
+        pmax = max([p1,p2])
+        ptups.append((ab1[0],ab1[1],{'p_coloc':pmax})) #make as an edge for nx
+    return ptups
+
 if __name__ == "__main__":
     cmd = get_commands()
     #adjust later
@@ -322,20 +403,12 @@ if __name__ == "__main__":
 
     f_clus_dict = read_clusterfile(infile, cmd.min_doms, \
         cmd.verbose)[0]
-    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.verbose)
+    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_doms, cmd.verbose)
     clusters = list(f_clus_dict_rem.keys())
-    # for i in range(10):
-        # subdict = {clusters[i] : f_clus_dict_rem1[clusters[i]]}
-        # print(remove_dupl_doms(subdict))
-    x=10
-    testdict = {clus : f_clus_dict_rem[clus] for clus in clusters[:x]}
-
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
-    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores)
-    # print(adj_counts)
-    #print(adj_counts['RCC1'])
-    #print(adj_counts['Big_3_5'])
-    # adj_counts, c_counts = count_interactions(testdict, cmd.verbose)
-    # print('\n',sorted([(key,c_counts[key]['count'],c_counts[key]['N1']) for key in c_counts],key=lambda x: x[1]))
-    # print([(key,c_counts[key]['count'],c_counts[key]['N1']) for key in c_counts \
-        # if c_counts[key]['count'] > len(f_clus_dict_rem.keys())])
+    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
+        cmd.verbose)
+    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores, \
+        cmd.verbose)
+    print(adj_pvals[:10])
+    print(col_pvals[:30])
