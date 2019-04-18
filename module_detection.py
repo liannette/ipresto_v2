@@ -474,6 +474,7 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
     #creating the pvalues to loop through
     pvs = {pv for pdict in list(zip(*pval_edges))[2] for pv in pdict.values()\
         if pv <= sign_cutoff}
+    print('  looping through {} pvalue cutoffs'.format(len(pvs)))
     pool = Pool(cores, maxtasksperchild = 20)
     moduleslist = pool.map(partial(generate_modules, main_g = modules_graph, \
         verbose = verbose), pvs)
@@ -486,13 +487,18 @@ def generate_modules(sign_cutoff, main_g, verbose):
     '''
     # g = find_sign_interactions(main_g, sign_cutoff, verbose)
     sign_edges = set()
+    print(0)
     for n, nbrs in main_g.adj.items():
         for nbr, pv in nbrs.items():
             if any([pval <= sign_cutoff for pval in pv.values()]):
                 sign_edges.add(tuple(sorted([n,nbr])))
+    print(1)
     g = main_g.edge_subgraph(sign_edges)
+    print(2)
     cliqs = nx.algorithms.clique.find_cliques(g)
+    print(3)
     cliqs = [tuple(sorted(clq)) for clq in cliqs if len(clq) > 2]
+    print(4)
     return cliqs
 
 if __name__ == "__main__":
@@ -511,6 +517,9 @@ if __name__ == "__main__":
         cmd.verbose)
 
     pvals = adj_pvals+col_pvals
+    mod_graph = generate_graph(pvals)
+    print(generate_modules(0.1, mod_graph, cmd.verbose))
+    quit()
     modules = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
         cmd.verbose)
     print(modules[:10])
