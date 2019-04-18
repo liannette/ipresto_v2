@@ -39,9 +39,11 @@ import argparse
 from Bio import SeqIO
 from Bio import SearchIO
 from collections import OrderedDict, Counter, defaultdict
+from copy import deepcopy
 from functools import partial
 from glob import glob, iglob
 from itertools import combinations, product
+import matplotlib.pyplot as plt
 from multiprocessing import Pool, cpu_count
 import networkx as nx
 import os
@@ -399,6 +401,100 @@ def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
         ptups.append((ab1[0],ab1[1],{'p_coloc':pmax})) #make as an edge for nx
     return ptups
 
+def generate_graph(edges):
+    '''Returns a networkx graph
+
+    edges: list of tuples, (pair1,pair2,{attributes})
+    '''
+    g = nx.Graph()
+    g.add_edges_from(edges)
+    print('\nGenerated graph with:')
+    print(' {} nodes'.format(g.number_of_nodes()))
+    print(' {} edges'.format(g.number_of_edges()))
+    return g
+
+def visualise_graph(graph, subgraph_list = None, groups = True):
+    '''Plots a graph with possible subgraphs in different colours
+
+    graph: networkx graph
+    subgraph_list: list of lists of node names that should be coloured
+        differently, default = None
+    groups: bool, are there groups in the subgraph_list that you want to
+        colour differently (True)? or are nodes in subgraph list one seperate
+        group (False)
+    '''
+    cols = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
+    options = {'node_size': 2,'width': 0.2}
+    pos = nx.spring_layout(graph)
+    plt.figure()
+    nx.draw_networkx(graph, pos=pos, with_labels = False, node_color='black',\
+        **options)
+    if subgraph_list:
+        if groups:
+            for sub in subgraph_list:
+                nx.draw_networkx_nodes(graph, pos=pos, nodelist=sub, \
+                    node_color=random.choice(cols), **options)
+        else:
+            nx.draw_networkx_nodes(graph, pos=pos, nodelist=subgraph_list, \
+                    node_color='#91bfdb', marker='s', **options)
+    plt.show()
+
+def find_sign_interactions(g, sign_cutoff, verbose):
+    '''
+    Returns a nx.graph only containing significant interaction edges of g
+
+    g: networkx graph structure containing the cliques
+    sign_cutoff: float, pvalue cutoff for significance
+    verbose: bool, if True prints additional information
+    '''
+    newg = deepcopy(g)
+    for n, nbrs in g.adj.items():
+        for nbr, pv in nbrs.items():
+            if all([pval > sign_cutoff for pval in pv.values()]):
+                try:
+                    newg.remove_edge(n,nbr)
+                except nx.exception.NetworkXError:
+                    #edge is already removed
+                    if n in newg:
+                        if newg.degree[n] == 0:
+                            newg.remove_node(n)
+                    if nbr in newg:
+                        if newg.degree[nbr] == 0:
+                            newg.remove_node(nbr)
+    if verbose:
+        print(' {} significant interactions with pvalue cutoff of {}'.format(\
+            newg.number_of_edges(), sign_cutoff))
+    return newg
+
+def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
+    '''
+    '''
+    print('\nFinding all modules')
+    modules_graph = generate_graph(pval_edges)
+    #creating the pvalues to loop through
+    pvs = {pv for pdict in list(zip(*pval_edges))[2] for pv in pdict.values()\
+        if pv <= sign_cutoff}
+    pool = Pool(cores, maxtasksperchild = 20)
+    moduleslist = pool.map(partial(generate_modules, main_g = modules_graph, \
+        verbose = verbose), pvs)
+    modules = sorted({m for mod in moduleslist for m in mod}, key=len, \
+        reverse=True)
+    return modules
+
+def generate_modules(sign_cutoff, main_g, verbose):
+    '''
+    '''
+    # g = find_sign_interactions(main_g, sign_cutoff, verbose)
+    sign_edges = set()
+    for n, nbrs in main_g.adj.items():
+        for nbr, pv in nbrs.items():
+            if any([pval <= sign_cutoff for pval in pv.values()]):
+                sign_edges.add(tuple(sorted([n,nbr])))
+    g = main_g.edge_subgraph(sign_edges)
+    cliqs = nx.algorithms.clique.find_cliques(g)
+    cliqs = [tuple(sorted(clq)) for clq in cliqs if len(clq) > 2]
+    return cliqs
+
 if __name__ == "__main__":
     cmd = get_commands()
     #adjust later
@@ -411,7 +507,24 @@ if __name__ == "__main__":
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
-    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores, \
+    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
-    print(adj_pvals[:10])
-    print(col_pvals[:30])
+
+    pvals = adj_pvals+col_pvals
+    modules = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
+        cmd.verbose)
+    print(modules[:10])
+    
+    # sig_g = find_sign_interactions(modules_graph, cmd.pval_cutoff, \
+        # cmd.verbose)
+    # # visualise_graph(modules_graph, sig_g.nodes(), False)
+    # # sig_cliqs = sorted(nx.algorithms.clique.find_cliques(sig_g),key=len)
+    # # visualise_graph(sig_g, sig_cliqs, True)
+    # print(modules_graph.number_of_edges())
+    # print(sig_g.number_of_edges(),sig_g.number_of_nodes())
+    # ps = [cmd.pval_cutoff, 0.0000005]
+    # for i in ps:
+        # pc = i
+        # sig_g = find_sign_interactions(modules_graph, pc,cmd.verbose)
+        # sig_cliqs = sorted(nx.algorithms.clique.find_cliques(sig_g),key=len)
+        # visualise_graph(sig_g, sig_cliqs, True)
