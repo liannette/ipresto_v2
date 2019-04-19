@@ -293,7 +293,7 @@ def calc_adj_pval_wrapper(count_dict, clusdict, cores, verbose):
         zip(pvals[::2], pvals[1::2], pvals_adj[::2], pvals_adj[1::2]):
         assert(ab1[0]==ab2[0] and ab1[1]==ab2[1])
         pmax = max([p1,p2])
-        ptups.append((ab1[0],ab1[1],{'p_adj':pmax})) #make as an edge for nx
+        ptups.append(((ab1[0],ab1[1]),pmax))
     return ptups
 
 def calc_adj_pval(domval_pair, counts, Nall):
@@ -398,19 +398,35 @@ def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
         zip(pvals[::2], pvals[1::2], pvals_adj[::2], pvals_adj[1::2]):
         assert(ab1[0]==ab2[0] and ab1[1]==ab2[1])
         pmax = max([p1,p2])
-        ptups.append((ab1[0],ab1[1],{'p_coloc':pmax})) #make as an edge for nx
+        ptups.append(((ab1[0],ab1[1]),pmax))
     return ptups
 
-def generate_graph(edges):
+def keep_lowest_pval(colocs, adjs):
+    '''
+    '''
+    pvals = colocs+adjs
+    counter = Counter(list(zip(*pvals))[0])
+    dupl = sorted([tup for tup in pvals if counter[tup[0]] == 2])
+    uniques = [tup for tup in pvals if counter[tup[0]] == 1]
+    print(dupl)
+    lowest = []
+    for p1,p2 in zip(dupl[::2],dupl[1::2]):
+        pmin = min([p1[1],p2[1]])
+        lowest.append((p1[0][0],p1[0][1],pmin))
+    uniques = [(tup[0][0],tup[0][1],tup[1]) for tup in uniques]
+    return lowest+uniques
+
+def generate_graph(edges, verbose):
     '''Returns a networkx graph
 
     edges: list of tuples, (pair1,pair2,{attributes})
     '''
     g = nx.Graph()
     g.add_edges_from(edges)
-    print('\nGenerated graph with:')
-    print(' {} nodes'.format(g.number_of_nodes()))
-    print(' {} edges'.format(g.number_of_edges()))
+    if verbose:
+        print('\nGenerated graph with:')
+        print(' {} nodes'.format(g.number_of_nodes()))
+        print(' {} edges'.format(g.number_of_edges()))
     return g
 
 def visualise_graph(graph, subgraph_list = None, groups = True):
@@ -470,29 +486,35 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
     '''
     '''
     print('\nFinding all modules')
-    modules_graph = generate_graph(pval_edges)
+    sign_pvs = [ptup for ptup in pval_edges if ptup[2] <= sign_cutoff]
+    
+    
+    
+    
+    #changing code to make a graph for each loop
+    print('\nFinding all modules')
+    modules_graph = generate_graph(pval_edges, verbose)
     #creating the pvalues to loop through
     pvs = {pv for pdict in list(zip(*pval_edges))[2] for pv in pdict.values()\
         if pv <= sign_cutoff}
     print('  looping through {} pvalue cutoffs'.format(len(pvs)))
-    modules = set()
-    # pool = Pool(cores, maxtasksperchild = 100)
-    # for cutoff in pvs:
-        # pool.apply_async(generate_modules, args=(cutoff, modules_graph),\
-            # callback=lambda x: modules.update(x))
-    # # moduleslist = pool.map(partial(generate_modules, main_g = modules_graph, \
-        # # verbose = verbose), pvs)
-    # pool.close()
-    # pool.join()
+    modules = []
+    pool = Pool(cores, maxtasksperchild = 10)
     for cutoff in pvs:
-        modules.update(generate_modules(cutoff,modules_graph))
-    modules = sorted(modules, key=len, reverse=True)
+        pool.apply_async(generate_modules, args=(cutoff, modules_graph),\
+            callback=lambda x: modules.append(x))
+    pool.close()
+    pool.join()
+    # for i,cutoff in enumerate(pvs):
+        # print('iter {}'.format(i))
+        # modules.update(generate_modules(cutoff,modules_graph))
+    print('sorting')
+    modules = sorted({m for mod in modules for m in mod}, key=len, reverse=True)
     return modules
 
 def generate_modules(sign_cutoff, main_g):
     '''
     '''
-    # g = find_sign_interactions(main_g, sign_cutoff, verbose)
     sign_edges = set()
     # print(0)
     for n, nbrs in main_g.adj.items():
@@ -504,9 +526,9 @@ def generate_modules(sign_cutoff, main_g):
     # print(2)
     cliqs = nx.algorithms.clique.find_cliques(g)
     # print(3)
-    cliqs = [tuple(sorted(clq)) for clq in cliqs if len(clq) > 2]
+    cliqs = {tuple(sorted(clq)) for clq in cliqs if len(clq) > 2}
     # print(4)
-    print(len(cliqs))
+    # print(len(cliqs))
     return cliqs
 
 if __name__ == "__main__":
@@ -524,8 +546,9 @@ if __name__ == "__main__":
     col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
 
-    pvals = adj_pvals+col_pvals
-    modules = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
-        cmd.verbose)
-    print(modules[:10], len(modules))
+    pvals = keep_lowest_pval(col_pvals,adj_pvals)
+    # pvals = adj_pvals+col_pvals
+    # modules = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
+        # cmd.verbose)
+    # print(modules[:10], len(modules))
 
