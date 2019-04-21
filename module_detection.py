@@ -404,9 +404,10 @@ def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
 
 def keep_lowest_pval(colocs, adjs):
     '''
-    Returns all domain pairs with their lowest pvalue as [(dom1,dom2,pval)]
+    Returns all domain pairs with their lowest pvalue as an edge for n
 
     colocs, adjs: list of tuples [((dom1,dom2),pval)]
+    Tuples look like (dom1,dom2,{pval:x})
     '''
     pvals = colocs+adjs
     counter = Counter(list(zip(*pvals))[0])
@@ -415,8 +416,8 @@ def keep_lowest_pval(colocs, adjs):
     lowest = []
     for p1,p2 in zip(dupl[::2],dupl[1::2]):
         pmin = min([p1[1],p2[1]])
-        lowest.append((p1[0][0],p1[0][1],pmin))
-    uniques = [(tup[0][0],tup[0][1],tup[1]) for tup in uniques]
+        lowest.append((p1[0][0],p1[0][1],{'pval':pmin}))
+    uniques = [(tup[0][0],tup[0][1],{'pval':tup[1]}) for tup in uniques]
     return lowest+uniques
 
 def generate_graph(edges, verbose):
@@ -458,35 +459,9 @@ def visualise_graph(graph, subgraph_list = None, groups = True):
                     node_color='#91bfdb', marker='s', **options)
     plt.show()
 
-def find_sign_interactions(g, sign_cutoff, verbose):
-    '''
-    Returns a nx.graph only containing significant interaction edges of g
-
-    g: networkx graph structure containing the cliques
-    sign_cutoff: float, pvalue cutoff for significance
-    verbose: bool, if True prints additional information
-    '''
-    newg = deepcopy(g)
-    for n, nbrs in g.adj.items():
-        for nbr, pv in nbrs.items():
-            if all([pval > sign_cutoff for pval in pv.values()]):
-                try:
-                    newg.remove_edge(n,nbr)
-                except nx.exception.NetworkXError:
-                    #edge is already removed
-                    if n in newg:
-                        if newg.degree[n] == 0:
-                            newg.remove_node(n)
-                    if nbr in newg:
-                        if newg.degree[nbr] == 0:
-                            newg.remove_node(nbr)
-    if verbose:
-        print(' {} significant interactions with pvalue cutoff of {}'.format(\
-            newg.number_of_edges(), sign_cutoff))
-    return newg
-
 def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
     '''
+    Returns a dict with all modules {(module):strictest_pval_cutoff}
 
     pval_edges: list of tuples, [(dom1,dom2,pval)]
     sign_cutoff: float, pvalue cutoff
@@ -494,32 +469,29 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
     verbose: bool, if True print additional information
     '''
     print('\nFinding all modules')
-    sign_pvs = sorted([ptup for ptup in pval_edges \
-        if ptup[1] <= sign_cutoff], key=itemgetter(2), reverse=True)
-    pv_values = set(list(zip(*sign_pvs))[2])
+    sign_pvs = (ptup for ptup in pval_edges if ptup[2]['pval'] <= sign_cutoff)
+    pv_values = {pv['pval'] for pv in list(zip(*sign_pvs))[2]}
     print(len(pv_values))
-    manager = Manager()
-    modules = manager.dict()
-    pool = Pool(cores, maxtasksperchild = 1)
-    for pv in pv_values:
-        pool.apply_async(generate_modules, args=(pv, sign_pvals, modules))
-    pool.close()
-    pool.join()
-    print(len(modules))
-    #put pvalues and modules in a dict with pvalue as key and list of modules
-    #as values? (or a set of modules) OR modules as keys and pvals as values
-    return modules
+    with Manager() as manager:
+        modules = manager.dict()
+        pool = Pool(cores, maxtasksperchild = 1)
+        for pv in pv_values:
+            pool.apply_async(generate_modules, args=(pv, sign_pvs, modules))
+        pool.close()
+        pool.join()
+        print(len(modules))
+        return modules
 
 def generate_modules(sign_cutoff, dom_pairs, main_dict):
     '''Updates main_dict with all modules and the lowest cutoff to detect them
     '''
-    edges = (edge for edge in dom_pairs if edge[2] <= sign_cutoff)
+    edges = (edge for edge in dom_pairs if edge[2]['pval'] <= sign_cutoff)
     mod_graph = generate_graph(edges, False)
     cliqs = nx.algorithms.clique.find_cliques(mod_graph)
     cliqs = {tuple(sorted(clq)) for clq in cliqs if len(clq) > 2}
     for cliq in cliqs:
         if len(cliq) > 2:
-            cliq = tuple(sorted(clq))
+            cliq = tuple(sorted(cliq))
             try:
                 prev_val = main_dict[cliq]
             except KeyError:
@@ -544,12 +516,7 @@ if __name__ == "__main__":
         cmd.verbose)
 
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
-    mod_dict = {}
-    print(mod_dict)
-    generate_modules(cmd.pval_cutoff, pvals, mod_dict)
-    print(mod_dict, len(mod_dict))
-    # pvals = adj_pvals+col_pvals
-    # modules = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
-        # cmd.verbose)
-    # print(modules[:10], len(modules))
-
+    # mod_dict = {}
+    # generate_modules(cmd.pval_cutoff, pvals, mod_dict)
+    mods = generate_modules_wrapper(pvals,cmd.pval_cutoff,cmd.cores,cmd.verbose)
+    print(len(mods))
