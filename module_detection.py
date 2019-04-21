@@ -44,8 +44,9 @@ from functools import partial
 from glob import glob, iglob
 from itertools import combinations, product
 import matplotlib.pyplot as plt
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, cpu_count, Manager
 import networkx as nx
+from operator import itemgetter
 import os
 import random
 from statsmodels.stats.multitest import multipletests
@@ -403,12 +404,14 @@ def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
 
 def keep_lowest_pval(colocs, adjs):
     '''
+    Returns all domain pairs with their lowest pvalue as [(dom1,dom2,pval)]
+
+    colocs, adjs: list of tuples [((dom1,dom2),pval)]
     '''
     pvals = colocs+adjs
     counter = Counter(list(zip(*pvals))[0])
     dupl = sorted([tup for tup in pvals if counter[tup[0]] == 2])
     uniques = [tup for tup in pvals if counter[tup[0]] == 1]
-    print(dupl)
     lowest = []
     for p1,p2 in zip(dupl[::2],dupl[1::2]):
         pmin = min([p1[1],p2[1]])
@@ -484,52 +487,46 @@ def find_sign_interactions(g, sign_cutoff, verbose):
 
 def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
     '''
+
+    pval_edges: list of tuples, [(dom1,dom2,pval)]
+    sign_cutoff: float, pvalue cutoff
+    cores: int, number of cores to use
+    verbose: bool, if True print additional information
     '''
     print('\nFinding all modules')
-    sign_pvs = [ptup for ptup in pval_edges if ptup[2] <= sign_cutoff]
-    
-    
-    
-    
-    #changing code to make a graph for each loop
-    print('\nFinding all modules')
-    modules_graph = generate_graph(pval_edges, verbose)
-    #creating the pvalues to loop through
-    pvs = {pv for pdict in list(zip(*pval_edges))[2] for pv in pdict.values()\
-        if pv <= sign_cutoff}
-    print('  looping through {} pvalue cutoffs'.format(len(pvs)))
-    modules = []
-    pool = Pool(cores, maxtasksperchild = 10)
-    for cutoff in pvs:
-        pool.apply_async(generate_modules, args=(cutoff, modules_graph),\
-            callback=lambda x: modules.append(x))
+    sign_pvs = sorted([ptup for ptup in pval_edges \
+        if ptup[1] <= sign_cutoff], key=itemgetter(2), reverse=True)
+    pv_values = set(list(zip(*sign_pvs))[2])
+    print(len(pv_values))
+    manager = Manager()
+    modules = manager.dict()
+    pool = Pool(cores, maxtasksperchild = 1)
+    for pv in pv_values:
+        pool.apply_async(generate_modules, args=(pv, sign_pvals, modules))
     pool.close()
     pool.join()
-    # for i,cutoff in enumerate(pvs):
-        # print('iter {}'.format(i))
-        # modules.update(generate_modules(cutoff,modules_graph))
-    print('sorting')
-    modules = sorted({m for mod in modules for m in mod}, key=len, reverse=True)
+    print(len(modules))
+    #put pvalues and modules in a dict with pvalue as key and list of modules
+    #as values? (or a set of modules) OR modules as keys and pvals as values
     return modules
 
-def generate_modules(sign_cutoff, main_g):
+def generate_modules(sign_cutoff, dom_pairs, main_dict):
+    '''Updates main_dict with all modules and the lowest cutoff to detect them
     '''
-    '''
-    sign_edges = set()
-    # print(0)
-    for n, nbrs in main_g.adj.items():
-        for nbr, pv in nbrs.items():
-            if any([pval <= sign_cutoff for pval in pv.values()]):
-                sign_edges.add(tuple(sorted([n,nbr])))
-    # print(1)
-    g = main_g.edge_subgraph(sign_edges)
-    # print(2)
-    cliqs = nx.algorithms.clique.find_cliques(g)
-    # print(3)
+    edges = (edge for edge in dom_pairs if edge[2] <= sign_cutoff)
+    mod_graph = generate_graph(edges, False)
+    cliqs = nx.algorithms.clique.find_cliques(mod_graph)
     cliqs = {tuple(sorted(clq)) for clq in cliqs if len(clq) > 2}
-    # print(4)
-    # print(len(cliqs))
-    return cliqs
+    for cliq in cliqs:
+        if len(cliq) > 2:
+            cliq = tuple(sorted(clq))
+            try:
+                prev_val = main_dict[cliq]
+            except KeyError:
+                main_dict[cliq] = sign_cutoff
+            else:
+                if prev_val > sign_cutoff:
+                    main_dict[cliq] = sign_cutoff
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -547,6 +544,10 @@ if __name__ == "__main__":
         cmd.verbose)
 
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
+    mod_dict = {}
+    print(mod_dict)
+    generate_modules(cmd.pval_cutoff, pvals, mod_dict)
+    print(mod_dict, len(mod_dict))
     # pvals = adj_pvals+col_pvals
     # modules = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
         # cmd.verbose)
