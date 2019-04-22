@@ -459,7 +459,8 @@ def visualise_graph(graph, subgraph_list = None, groups = True):
                     node_color='#91bfdb', marker='s', **options)
     plt.show()
 
-def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
+def generate_modules_wrapper(pval_edges, sign_cutoff, modules_dict, cores, \
+    verbose):
     '''
     Returns a dict with all modules {(module):strictest_pval_cutoff}
 
@@ -469,18 +470,16 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, verbose):
     verbose: bool, if True print additional information
     '''
     print('\nFinding all modules')
-    sign_pvs = (ptup for ptup in pval_edges if ptup[2]['pval'] <= sign_cutoff)
+    sign_pvs = [ptup for ptup in pval_edges if ptup[2]['pval'] <= sign_cutoff]
     pv_values = {pv['pval'] for pv in list(zip(*sign_pvs))[2]}
-    print(len(pv_values))
-    with Manager() as manager:
-        modules = manager.dict()
-        pool = Pool(cores, maxtasksperchild = 1)
-        for pv in pv_values:
-            pool.apply_async(generate_modules, args=(pv, sign_pvs, modules))
-        pool.close()
-        pool.join()
-        print(len(modules))
-        return modules
+    print(sign_cutoff)
+    print('  looping through {} pvalue cutoffs'.format(len(pv_values)))
+    pool = Pool(cores, maxtasksperchild = 1)
+    pool.map(partial(generate_modules, dom_pairs=sign_pvs, \
+        main_dict=modules_dict), pv_values)
+    print('finished')
+    print(len(modules_dict))
+    return modules_dict
 
 def generate_modules(sign_cutoff, dom_pairs, main_dict):
     '''Updates main_dict with all modules and the lowest cutoff to detect them
@@ -493,7 +492,7 @@ def generate_modules(sign_cutoff, dom_pairs, main_dict):
         if len(cliq) > 2:
             cliq = tuple(sorted(cliq))
             try:
-                prev_val = main_dict[cliq]
+                prev_val = float(main_dict[cliq])
             except KeyError:
                 main_dict[cliq] = sign_cutoff
             else:
@@ -516,7 +515,12 @@ if __name__ == "__main__":
         cmd.verbose)
 
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
-    # mod_dict = {}
-    # generate_modules(cmd.pval_cutoff, pvals, mod_dict)
-    mods = generate_modules_wrapper(pvals,cmd.pval_cutoff,cmd.cores,cmd.verbose)
+
+    manager = Manager()
+    modules = manager.dict()
+    generate_modules(cmd.pval_cutoff, pvals, modules)
+    print(len(modules))
+    mods = generate_modules_wrapper(pvals,cmd.pval_cutoff,modules, cmd.cores,\
+        cmd.verbose)
+    print(len(modules))
     print(len(mods))
