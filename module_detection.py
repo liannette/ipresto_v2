@@ -52,6 +52,7 @@ import random
 from statsmodels.stats.multitest import multipletests
 import subprocess
 from sympy import binomial as ncr
+import time
 
 def get_commands():
     parser = argparse.ArgumentParser(description="Detects sub-clusters in \
@@ -459,7 +460,7 @@ def visualise_graph(graph, subgraph_list = None, groups = True):
                     node_color='#91bfdb', marker='s', **options)
     plt.show()
 
-def generate_modules_wrapper(pval_edges, sign_cutoff, modules_dict, cores, \
+def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
     verbose):
     '''
     Returns a dict with all modules {(module):strictest_pval_cutoff}
@@ -469,35 +470,44 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, modules_dict, cores, \
     cores: int, number of cores to use
     verbose: bool, if True print additional information
     '''
-    print('\nFinding all modules')
+    print('\nFinding all modules with a pvalue lower than {}'.format(\
+        sign_cutoff))
     sign_pvs = [ptup for ptup in pval_edges if ptup[2]['pval'] <= sign_cutoff]
+    print('  {} significant domain pair interactions'.format(len(sign_pvs)))
     pv_values = {pv['pval'] for pv in list(zip(*sign_pvs))[2]}
-    print(sign_cutoff)
+    #watch out if pv_values gets really big, maybe get 100,000 fixed numbers
+    #to loop over
     print('  looping through {} pvalue cutoffs'.format(len(pv_values)))
-    pool = Pool(cores, maxtasksperchild = 1)
-    pool.map(partial(generate_modules, dom_pairs=sign_pvs, \
-        main_dict=modules_dict), pv_values)
-    print('finished')
-    print(len(modules_dict))
+    pool = Pool(cores, maxtasksperchild = 50)
+    modules = pool.map(partial(generate_modules, dom_pairs=sign_pvs), \
+        pv_values)
+    modules_dict = {}
+    for p_mods_pair in modules:
+        p = list(p_mods_pair)[0]
+        mods = p_mods_pair[p]
+        for mod in mods:
+            try:
+                prev_val = modules_dict[mod]
+            except KeyError:
+                modules_dict[mod] = p
+            else:
+                if p < prev_val:
+                    modules_dict[mod] = p
+    print('{} modules detected'.format(len(modules_dict)))
+    with open(outfile, 'w') as out:
+        #sort them first, and maybe print more info length for example
+        for mod,p in modules_dict.items():
+            out.write('{}\t{}\n'.format(','.join(mod),p))
     return modules_dict
 
-def generate_modules(sign_cutoff, dom_pairs, main_dict):
+def generate_modules(sign_cutoff, dom_pairs):
     '''Updates main_dict with all modules and the lowest cutoff to detect them
     '''
     edges = (edge for edge in dom_pairs if edge[2]['pval'] <= sign_cutoff)
     mod_graph = generate_graph(edges, False)
     cliqs = nx.algorithms.clique.find_cliques(mod_graph)
     cliqs = {tuple(sorted(clq)) for clq in cliqs if len(clq) > 2}
-    for cliq in cliqs:
-        if len(cliq) > 2:
-            cliq = tuple(sorted(cliq))
-            try:
-                prev_val = float(main_dict[cliq])
-            except KeyError:
-                main_dict[cliq] = sign_cutoff
-            else:
-                if prev_val > sign_cutoff:
-                    main_dict[cliq] = sign_cutoff
+    return {sign_cutoff:cliqs}
 
 if __name__ == "__main__":
     cmd = get_commands()
@@ -516,11 +526,10 @@ if __name__ == "__main__":
 
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
 
-    manager = Manager()
-    modules = manager.dict()
-    generate_modules(cmd.pval_cutoff, pvals, modules)
-    print(len(modules))
-    mods = generate_modules_wrapper(pvals,cmd.pval_cutoff,modules, cmd.cores,\
+    start = time.time()
+    out_file = os.path.join(cmd.out_folder, 'testdata_modules.txt')
+    mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, out_file, cmd.cores,\
         cmd.verbose)
-    print(len(modules))
-    print(len(mods))
+    end = time.time()
+    print('\nFound modules in {} seconds'.format(end-start))
+    
