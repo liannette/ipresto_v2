@@ -10,13 +10,14 @@ Usage:
 python3 preprocessing_bgcs.py -h
 
 Example usage:
-python3 bgc_to_pfam.py -i ../testdata -o ../testdata_domains --hmm_path 
-    ../domains/Pfam_100subs_tc.hmm --exclude final -c 12 -e True
+python3 module_detection_pipeline.py -i ../testdata -o ../testdata_domains
+--hmm_path ../domains/Pfam_100subs_tc.hmm --exclude final -c 12 -e True
 
 Notes:
 Only handles gbk files with one cluster
 
 Layout:
+get_commands
 process_gbks
 convert_gbk2fasta
 run_hmmscan
@@ -33,25 +34,43 @@ generate_graph
 find_representatives
 find_all_representatives
 write_filtered_bgcs
+remove_infr_doms
+remove_dupl_doms
+count_adj
+count_coloc
+makehash
+count_interactions
+calc_adj_pval_wrapper
+calc_adj_pval
+calc_coloc_pval_wrapper
+keep_lowest_pval
+visualise_graph
+generate_modules_wrapper
+generate_modules
+write_module_file
 
 Required:
-python 3.6
+python 3
 hmmscan
-Biopython
-networkx
 '''
+
 import argparse
 from Bio import SeqIO
 from Bio import SearchIO
-from collections import OrderedDict, Counter
+from collections import OrderedDict, Counter, defaultdict
 from functools import partial
 from glob import glob, iglob
-from itertools import combinations
+from itertools import combinations, product
+import matplotlib.pyplot as plt
 from multiprocessing import Pool, cpu_count
 import networkx as nx
+from operator import itemgetter
 import os
 import random
+from statsmodels.stats.multitest import multipletests
 import subprocess
+from sympy import binomial as ncr
+import time
 
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to turn bgcs in \
@@ -59,7 +78,7 @@ def get_commands():
         reduce redundancy by filtering out similar bgcs.")
     parser.add_argument("-i", "--in_folder", dest="in_folder", help="Input \
         directory of gbk files", required=True)
-    parser.add_argument("--exclude", dest="exclude", default="final",
+    parser.add_argument("--exclude", dest="exclude", default=["final"],
         nargs="+", help="If any string in this list occurs in the gbk \
         filename, this file will not be used for the analysis. \
         (default: final)")
@@ -948,6 +967,7 @@ def write_module_file(outfile,modules):
             out.write('{}\t{}\t{}\t{}\n'.format(i+1,len(mod),p,','.join(mod)))
 
 if __name__ == "__main__":
+    start = time.time()
     cmd = get_commands()
 
     #generating clusters as strings of domains
@@ -974,8 +994,6 @@ if __name__ == "__main__":
         dom_dict, filt_file)
 
     #detecting modules with statistical approach
-    start = time.time()
-
     f_clus_dict = read_clusterfile(filt_file, cmd.min_doms, cmd.verbose)[0]
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_doms, cmd.verbose)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
@@ -991,5 +1009,4 @@ if __name__ == "__main__":
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file, mods)
     end = time.time()
-    print('\nFound modules in {0:.2f} seconds'.format(end-start))
-    
+    print('\nScript completed in {0:.2f} seconds'.format(end-start))
