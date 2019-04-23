@@ -44,7 +44,7 @@ def get_commands():
         strings of domains using a domain hmm database")
     parser.add_argument("-i", "--in_folder", dest="in_folder", help="Input \
         directory of gbk files", required=True)
-    parser.add_argument("--exclude", dest="exclude", default="final",
+    parser.add_argument("--exclude", dest="exclude", default=["final"],
         nargs="+", help="If any string in this list occurs in the gbk \
         filename, this file will not be used for the analysis. \
         (default: final)")
