@@ -22,18 +22,6 @@ python 3.6
 Biopython
 networkx
 scipy
-
-To do:
-preprocess clusters (remove duplicates pfams, remove domains that only occur
-    once or twice (less than thrice), remove bgcs that have less than 2 
-    domains as a result)
-    in the md script they remove duplicate pfams, replace them with - and
-    leave one copy at the end
-generate dom interactions in a matrix (adj and coloc) (using dom_list as index
-    and np arrays?)
-computing p-values by randomly distributing data
-multiple testing corrections on (BY)
-graph generation with sign interactions and iteration
 '''
 import argparse
 from Bio import SeqIO
@@ -58,8 +46,8 @@ def get_commands():
     parser = argparse.ArgumentParser(description="Detects sub-clusters in \
         BGCs represented as strings of Pfams according to Del Carratore et. \
         al (2019)")
-    parser.add_argument("-i", "--in_folder", dest="in_folder", help="Input \
-        directory of gbk files", required=True)
+    parser.add_argument("-i", "--in_file", dest="in_file", help="Input \
+        clusterfile in csv format", required=True)
     parser.add_argument("-o", "--out_folder", dest="out_folder", 
         required=True, help="Output directory, this will contain all output \
         data files.")
@@ -476,9 +464,9 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
     print('  {} significant domain pair interactions'.format(len(sign_pvs)))
     pv_values = {pv['pval'] for pv in list(zip(*sign_pvs))[2]}
     #watch out if pv_values gets really big, maybe get 100,000 fixed numbers
-    #to loop over
+    #to loop over if there are more than 100,000 pv_values
     print('  looping through {} pvalue cutoffs'.format(len(pv_values)))
-    pool = Pool(cores, maxtasksperchild = 50)
+    pool = Pool(cores, maxtasksperchild = 20)
     modules = pool.map(partial(generate_modules, dom_pairs=sign_pvs), \
         pv_values)
     modules_dict = {}
@@ -495,9 +483,13 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
                     modules_dict[mod] = p
     print('{} modules detected'.format(len(modules_dict)))
     with open(outfile, 'w') as out:
-        #sort them first, and maybe print more info length for example
-        for mod,p in modules_dict.items():
-            out.write('{}\t{}\n'.format(','.join(mod),p))
+        header = ['Module_number','Length','Strictest_detection_cutoff',\
+            'Domains']
+        out.write('{}\n'.format('\t'.join(header)))
+        #maybe print more info length for example
+        for i,pair in enumerate(sorted(modules_dict.items(), itemgetter(1))):
+            mod,p = pair
+            out.write('{}\t{}\t{}\t{}\n'.format(i+1,len(mod),p,','.join(mod)))
     return modules_dict
 
 def generate_modules(sign_cutoff, dom_pairs):
@@ -510,11 +502,10 @@ def generate_modules(sign_cutoff, dom_pairs):
     return {sign_cutoff:cliqs}
 
 if __name__ == "__main__":
+    start = time.time()
     cmd = get_commands()
-    #adjust later
-    infile = os.path.join(cmd.out_folder, 'testdata_filtered_clusterfile.csv')
 
-    f_clus_dict = read_clusterfile(infile, cmd.min_doms, \
+    f_clus_dict = read_clusterfile(cmd.in_file, cmd.min_doms, \
         cmd.verbose)[0]
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_doms, cmd.verbose)
     clusters = list(f_clus_dict_rem.keys())
@@ -523,13 +514,13 @@ if __name__ == "__main__":
         cmd.verbose)
     col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
-
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
 
-    start = time.time()
-    out_file = os.path.join(cmd.out_folder, 'testdata_modules.txt')
+    prefix = os.path.split(cmd.in_file)[-1].split('_')[0]
+    out_file = os.path.join(cmd.out_folder, prefix+'_modules.txt')
+    print(out_file)
     mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, out_file, cmd.cores,\
         cmd.verbose)
     end = time.time()
-    print('\nFound modules in {} seconds'.format(end-start))
+    print('\nFound modules in {0:.2f} seconds'.format(end-start))
     
