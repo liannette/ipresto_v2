@@ -426,16 +426,17 @@ def generate_edge(pair, d_dict, cutoff):
         # print(pair,ai,contained)
         return(p1,p2,{'ai':ai,'contained':contained})
 
-def generate_graph(edges):
+def generate_graph(edges, verbose):
     '''Returns a networkx graph
 
     edges: list of tuples, (pair1,pair2,{attributes})
     '''
     g = nx.Graph()
     g.add_edges_from(edges)
-    print('\nGenerated graph with:')
-    print(' {} nodes'.format(g.number_of_nodes()))
-    print(' {} edges'.format(g.number_of_edges()))
+    if verbose:
+        print('\nGenerated graph with:')
+        print(' {} nodes'.format(g.number_of_nodes()))
+        print(' {} edges'.format(g.number_of_edges()))
     return g
 
 def find_representatives(clqs, d_l_dict, graph):
@@ -562,7 +563,7 @@ if __name__ == "__main__":
     clus_names = list(dom_dict.keys())
     similar_bgcs = generate_edges(clus_names, dom_dict, cmd.sim_cutoff,\
         cmd.cores)
-    graph = generate_graph(similar_bgcs)
+    graph = generate_graph(similar_bgcs, True)
     uniq_bgcs = [clus for clus in clus_names if not clus in graph.nodes()]
     all_reps = find_all_representatives(doml_dict, graph)
     all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps, dom_dict, \
