@@ -225,6 +225,7 @@ def count_interactions(clusdict, verbose):
     print('\nCounting colocalisation and adjacency interactions')
     all_doms = {v for val in clusdict.values() for v in val}
     all_doms.remove('-')
+
     #initialising count dicts
     adj_counts = makehash()
     for d in all_doms:
@@ -448,7 +449,7 @@ def visualise_graph(graph, subgraph_list = None, groups = True):
                     node_color='#91bfdb', marker='s', **options)
     plt.show()
 
-def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
+def generate_modules_wrapper(pval_edges, sign_cutoff, cores, \
     verbose):
     '''
     Returns a dict with all modules {(module):strictest_pval_cutoff}
@@ -466,9 +467,9 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
     #watch out if pv_values gets really big, maybe get 100,000 fixed numbers
     #to loop over if there are more than 100,000 pv_values
     print('  looping through {} pvalue cutoffs'.format(len(pv_values)))
-    pool = Pool(cores, maxtasksperchild = 20)
-    modules = pool.map(partial(generate_modules, dom_pairs=sign_pvs), \
-        pv_values)
+    pool = Pool(cores, maxtasksperchild=100)
+    modules = pool.imap(partial(generate_modules, dom_pairs=sign_pvs), \
+        pv_values, chunksize=250)
     modules_dict = {}
     for p_mods_pair in modules:
         p = list(p_mods_pair)[0]
@@ -481,26 +482,38 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
             else:
                 if p < prev_val:
                     modules_dict[mod] = p
-    print('{} modules detected'.format(len(modules_dict)))
-    with open(outfile, 'w') as out:
-        header = ['Module_number','Length','Strictest_detection_cutoff',\
-            'Domains']
-        out.write('{}\n'.format('\t'.join(header)))
-        #maybe print more info length for example
-        for i,pair in enumerate(sorted(modules_dict.items(), \
-            key = itemgetter(1))):
-            mod,p = pair
-            out.write('{}\t{}\t{}\t{}\n'.format(i+1,len(mod),p,','.join(mod)))
+    print('{} modules detected'.format(len(modules_dict)))    
     return modules_dict
 
 def generate_modules(sign_cutoff, dom_pairs):
-    '''Updates main_dict with all modules and the lowest cutoff to detect them
+    '''
+    Returns modules found with a certain cutoff as {sign_cutoff:{(modules)}}
+
+    sign_cutoff: float, cutoff for detecting modules
+    dom_pairs: list of tuples, ('dom1', 'dom2', pvalue)
+    Modules are all maximal cliques with length > 2
     '''
     edges = (edge for edge in dom_pairs if edge[2]['pval'] <= sign_cutoff)
     mod_graph = generate_graph(edges, False)
     cliqs = nx.algorithms.clique.find_cliques(mod_graph)
     cliqs = {tuple(sorted(clq)) for clq in cliqs if len(clq) > 2}
     return {sign_cutoff:cliqs}
+
+def write_module_file(outfile,modules):
+    '''Write modules with info about the modules to outfile
+
+    outfile: string, path
+    modules: dict, {(module_tuple):strictest_detection_cutoff}
+    '''
+    print('Writing modules to {}'.format(outfile))
+    with open(outfile, 'w') as out:
+        header = ['Module_number','Length','Strictest_detection_cutoff',\
+            'Domains']
+        out.write('{}\n'.format('\t'.join(header)))
+        #maybe print more info length for example
+        for i,pair in enumerate(sorted(modules.items(), key = itemgetter(1))):
+            mod,p = pair
+            out.write('{}\t{}\t{}\t{}\n'.format(i+1,len(mod),p,','.join(mod)))
 
 if __name__ == "__main__":
     start = time.time()
@@ -509,7 +522,6 @@ if __name__ == "__main__":
     f_clus_dict = read_clusterfile(cmd.in_file, cmd.min_doms, \
         cmd.verbose)[0]
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_doms, cmd.verbose)
-    clusters = list(f_clus_dict_rem.keys())
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
@@ -517,11 +529,11 @@ if __name__ == "__main__":
         cmd.verbose)
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
 
+    mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
+        cmd.verbose)
     prefix = os.path.split(cmd.in_file)[-1].split('_')[0]
     out_file = os.path.join(cmd.out_folder, prefix+'_modules.txt')
-    print(out_file)
-    mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, out_file, cmd.cores,\
-        cmd.verbose)
+    write_module_file(out_file, mods)
     end = time.time()
     print('\nFound modules in {0:.2f} seconds'.format(end-start))
     
