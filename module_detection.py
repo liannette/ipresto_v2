@@ -487,7 +487,8 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, outfile, cores, \
             'Domains']
         out.write('{}\n'.format('\t'.join(header)))
         #maybe print more info length for example
-        for i,pair in enumerate(sorted(modules_dict.items(), itemgetter(1))):
+        for i,pair in enumerate(sorted(modules_dict.items(), \
+            key = itemgetter(1))):
             mod,p = pair
             out.write('{}\t{}\t{}\t{}\n'.format(i+1,len(mod),p,','.join(mod)))
     return modules_dict
