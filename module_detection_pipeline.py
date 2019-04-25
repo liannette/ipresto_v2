@@ -1114,14 +1114,14 @@ if __name__ == "__main__":
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file, mods)
     #linking modules to bgcs and filtering mods that occur less than twice
-    bgcs_with_mods = link_all_mods2bgcs(f_clus_dict_rem, mods, cmd.cores)
-    bgcs_with_mods, mods = remove_infr_mods(bgcs_with_mods, mods)
+    bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cmd.cores)
+    bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods, mods)
     mod_file_f = '{}_filtered_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file_f,mods,bgcs_with_mods)
     bgcmodfile = '{}_bgcs_with_domains.txt'.format(\
         mod_file.split('_modules.txt')[0])
-    rank_mods = {mod:i for i,mod in enumerate(sorted(mods.items(),\
+    rank_mods = {pair[0]:i for i,pair in enumerate(sorted(modules.items(),\
         key=itemgetter(1)))}
     write_bgcs_and_modules(bgcmodfile, f_clus_dict, bgcs_with_mods,rank_mods)
 
