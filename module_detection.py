@@ -499,21 +499,82 @@ def generate_modules(sign_cutoff, dom_pairs):
     cliqs = {tuple(sorted(clq)) for clq in cliqs if len(clq) > 2}
     return {sign_cutoff:cliqs}
 
-def write_module_file(outfile,modules):
+def write_module_file(outfile,modules,bgc_mod_dict = None):
     '''Write modules with info about the modules to outfile
 
     outfile: string, path
     modules: dict, {(module_tuple):strictest_detection_cutoff}
+    bgc_mod_dict: dict of {bgc: [(modules)]}
     '''
     print('Writing modules to {}'.format(outfile))
     with open(outfile, 'w') as out:
-        header = ['Module_number','Length','Strictest_detection_cutoff',\
-            'Domains']
-        out.write('{}\n'.format('\t'.join(header)))
-        #maybe print more info length for example
-        for i,pair in enumerate(sorted(modules.items(), key = itemgetter(1))):
-            mod,p = pair
-            out.write('{}\t{}\t{}\t{}\n'.format(i+1,len(mod),p,','.join(mod)))
+        if bgcs_with_mods:
+            mod_counts = Counter([mod for modlist in bgc_mod_dict.values() \
+                for mod in modlist])
+            header = ['Module_number','Amount','Length',\
+                'Strictest_detection_cutoff','Domains']
+            out.write('{}\n'.format('\t'.join(header)))
+            for i,pair in enumerate(sorted(modules.items(), key = itemgetter(1))):
+                mod,p = pair
+                count = mod_counts[mod]
+                info = [i+1,count,len(mod),p,','.join(mod)]
+                out.write('{}\n'.format('\t'.join(info)))
+        else:
+            header = ['Length','Strictest_detection_cutoff',\
+                'Domains']
+            out.write('{}\n'.format('\t'.join(header)))
+            for i,pair in enumerate(sorted(modules.items(), key = \
+                itemgetter(1))):
+                mod,p = pair
+                out.write('{}\t{}\t{}\n'.format(len(mod),p,','.join(mod)))
+
+def link_mods2bgc(bgc, doms, modules):
+    '''Returns a tuple of (bgc, [(modules)])
+
+    bgc: string, bgc name
+    doms: list of strings, all domain names in bgc
+    modules: list of tuples of strings, each tuple contains the domains of a
+        module
+    '''
+    modlist = []
+    for mod in modules:
+        if set(doms).intersection(mod) == set(mod):
+            modlist.append(mod)
+    return (bgc,modlist)
+
+def link_all_mods2bgcs(bgcs, modules, cores):
+    '''Returns a dict of {bgc: [(modules)]}
+
+    bgcs: dict of {bgc: [domains])
+    modules: list of module tuples
+    cores: int, amount of cores to use
+    '''
+    pool = Pool(cores, maxtasksperchild=100)
+    bgcs_mod = pool.starmap(partial(link_mods2bgc, modules=modules), \
+        bgcs.items())
+    bgc_mod_dict = {pair[0]:pair[1] for pair in bgcs_mod}
+    return bgc_mod_dict
+
+def remove_infr_mods(bgc_mod_dict, modules_dict):
+    '''Returns updated input where modules that occur < 2 times are removed
+
+    bgc_mod_dict: dict of {bgc: [(modules)]}
+    modules: dict  of {mod:[info]}
+    '''
+    new_bgc_dict = deepcopy(bgc_mod_dict)
+    new_mods_dict = deepcopy(modules_dict)
+    mod_counts = Counter(modules_dict.keys())
+    mod_counts.update([mod for modlist in bgc_mod_dict.values() \
+        for mod in modlist])
+    #I initialised all mods with 1 so the if statements says < 3 instead of 2
+    infr_mods = [mod for mod, count in mod_counts.items() if count < 3]
+    print('\nRemoving {:.1f}% of modules that occur less than twice'.format(\
+        len(infr_mods)/len(modules_dict)*100))
+    for infr_mod in infr_mods:
+        del new_mods_dict[infr_mod]
+    for bgc,mods in new_bgc_dict.items():
+        new_bgc_dict[bgc] = [mod for mod in mods if not mod in infr_mods]
+    return new_bgc_dict,new_mods_dict
 
 if __name__ == "__main__":
     start = time.time()
@@ -534,6 +595,11 @@ if __name__ == "__main__":
     prefix = os.path.split(cmd.in_file)[-1].split('_')[0]
     out_file = os.path.join(cmd.out_folder, prefix+'_modules.txt')
     write_module_file(out_file, mods)
+
+    bgcs_with_mods = link_all_mods2bgcs(f_clus_dict_rem, mods, cmd.cores)
+    bgcs_with_mods, mods = remove_infr_mods(bgcs_with_mods, mods)
+    out_file_f = os.path.join(cmd.out_folder, prefix+'_filtered_modules.txt')
+    write_module_file(out_file_f,mods,bgcs_with_mods)
     end = time.time()
     print('\nFound modules in {0:.2f} seconds'.format(end-start))
     
