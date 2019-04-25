@@ -411,15 +411,15 @@ def is_contained(clus1, clus2):
         return True
     return False
 
-def generate_edges(nodes, dom_dict, cutoff, cores):
+def generate_edges(dom_dict, cutoff, cores):
     '''Returns a pair of clusters in a tuple if ai/contained above cutoff
 
-    nodes: list of strings, clusternames
     dom_dict: dict {clus1:[domains]}, clusters linked to domains
     cutoff: float, between 0-1, when clusters are similar
     cores: int, amount of cores used for calculation
     '''
     print("\nGenerating similarity scores")
+    clus_names = list(dom_dict.keys())
     pairs = combinations(clus_names, 2)
     pool = Pool(cores, maxtasksperchild = 100)
     #I could add imap if this is still too slow for antismashdb
@@ -1027,6 +1027,20 @@ def remove_infr_mods(bgc_mod_dict, modules_dict):
         new_bgc_dict[bgc] = [mod for mod in mods if not mod in infr_mods]
     return new_bgc_dict,new_mods_dict
 
+def read_mods_bgcs(modsfile):
+    '''Returns dict, {(mod):strictest_pvalue_cutoff}
+
+    modsfile: string, filename
+    '''
+    with open(mods_file, 'r') as mods_in:
+        mods = {}
+        mods_in.readline()
+        for line in mods_in:
+            line = line.strip().split('\t')
+            mod = tuple(line[-1].split(','))
+            mods[mod] = line[-2]
+    return mods
+
 if __name__ == "__main__":
     start = time.time()
     cmd = get_commands()
@@ -1045,8 +1059,7 @@ if __name__ == "__main__":
         cmd.verbose)
     filt_file = '{}_filtered_clusterfile.csv'.format(\
         clus_file.split('_clusterfile.csv')[0])
-    clus_names = list(dom_dict.keys())
-    similar_bgcs = generate_edges(clus_names, dom_dict, cmd.sim_cutoff,\
+    similar_bgcs = generate_edges(dom_dict, cmd.sim_cutoff,\
         cmd.cores)
     graph = generate_graph(similar_bgcs, True)
     uniq_bgcs = [clus for clus in clus_names if not clus in graph.nodes()]
@@ -1063,16 +1076,17 @@ if __name__ == "__main__":
     col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
     pvals = keep_lowest_pval(col_pvals,adj_pvals)
-
     mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,\
         cmd.verbose)
     mod_file = '{}_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file, mods)
+    #linking modules to bgcs and filtering mods that occur less than twice
     bgcs_with_mods = link_all_mods2bgcs(f_clus_dict_rem, mods, cmd.cores)
     bgcs_with_mods, mods = remove_infr_mods(bgcs_with_mods, mods)
     mod_file_f = '{}_filtered_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file_f,mods,bgcs_with_mods)
+
     end = time.time()
-    print('\nScript completed in {0:.2f} seconds'.format(end-start))
+    print('\nScript completed in {0:.1f} seconds'.format(end-start))
