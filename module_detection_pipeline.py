@@ -58,6 +58,7 @@ import argparse
 from Bio import SeqIO
 from Bio import SearchIO
 from collections import OrderedDict, Counter, defaultdict
+from copy import deepcopy
 from functools import partial
 from glob import glob, iglob
 from itertools import combinations, product
@@ -959,7 +960,7 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
     '''
     print('Writing modules to {}'.format(outfile))
     with open(outfile, 'w') as out:
-        if bgcs_with_mods:
+        if bgc_mod_dict:
             mod_counts = Counter([mod for modlist in bgc_mod_dict.values() \
                 for mod in modlist])
             header = ['Module_number','Amount','Length',\
@@ -969,7 +970,7 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
                 mod,p = pair
                 count = mod_counts[mod]
                 info = [i+1,count,len(mod),p,','.join(mod)]
-                out.write('{}\n'.format('\t'.join(info)))
+                out.write('{}\n'.format('\t'.join(map(str,info))))
         else:
             header = ['Length','Strictest_detection_cutoff',\
                 'Domains']
@@ -978,6 +979,37 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
                 itemgetter(1))):
                 mod,p = pair
                 out.write('{}\t{}\t{}\n'.format(len(mod),p,','.join(mod)))
+
+def write_bgcs_and_modules(outfile, clusters, bgc_mod_dict, ranked_mods):
+    '''Writes a files containing Bgcname\tDomains\tModules
+
+    outfile: string, file path
+    clusters: dict linking bgc name to its domains {bgc:[domains]}
+    bgc_mod_dict: dict linking bgc to its modules {bgc: [(modules)]}
+    ranked_mods: dict of {(module): number}
+    Before each domain its index is written seperated with a .
+    If there are multiple indeces they are separated with a -
+    Modules are seperated by ';'
+    outfile:
+    clustername    dom1,dom2,dom3,dom2    0.dom1,1-3.dom2,2.dom3;0.dom1,2.dom3
+    '''
+    print('\nWriting file that links bgcs to modules at {}'.format(outfile))
+    with open(outfile, 'w') as outf:
+        for bgc, doms in clusters.items():
+            dom_i = {}
+            for i,dm in enumerate(doms):
+                try:
+                    dom_i[dm].append(str(i))
+                except KeyError:
+                    dom_i[dm] = [str(i)]
+            dom_str = {dm:'-'.join(inds)+'.'+dm for dm,inds in dom_i.items()}
+            mods = bgc_mod_dict[bgc]
+            mods_str = '; '.join([','.join([dom_str[d] for d in mod]) \
+                for mod in mods])
+            mods_nums = '; '.join(map(str,[ranked_mods[mod] for mod in mods]))
+            outf.write('{}\t{}\t{}\t{}\n'.format(\
+                bgc,','.join(doms),mods_str,mods_nums))
+
 
 def link_mods2bgc(bgc, doms, modules):
     '''Returns a tuple of (bgc, [(modules)])
@@ -991,7 +1023,7 @@ def link_mods2bgc(bgc, doms, modules):
     for mod in modules:
         if set(doms).intersection(mod) == set(mod):
             modlist.append(mod)
-    return (bgc,modlist)
+    return (bgc,sorted(modlist,key=len))
 
 def link_all_mods2bgcs(bgcs, modules, cores):
     '''Returns a dict of {bgc: [(modules)]}
@@ -1062,7 +1094,7 @@ if __name__ == "__main__":
     similar_bgcs = generate_edges(dom_dict, cmd.sim_cutoff,\
         cmd.cores)
     graph = generate_graph(similar_bgcs, True)
-    uniq_bgcs = [clus for clus in clus_names if not clus in graph.nodes()]
+    uniq_bgcs = [clus for clus in dom_dict.keys() if not clus in graph.nodes()]
     all_reps = find_all_representatives(doml_dict, graph)
     all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps, \
         dom_dict, filt_file)
@@ -1087,6 +1119,11 @@ if __name__ == "__main__":
     mod_file_f = '{}_filtered_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file_f,mods,bgcs_with_mods)
+    bgcmodfile = '{}_bgcs_with_domains.txt'.format(\
+        mod_file.split('_modules.txt')[0])
+    rank_mods = {mod:i for i,mod in enumerate(sorted(mods.items(),\
+        key=itemgetter(1)))}
+    write_bgcs_and_modules(bgcmodfile, f_clus_dict, bgcs_with_mods,rank_mods)
 
     end = time.time()
     print('\nScript completed in {0:.1f} seconds'.format(end-start))
