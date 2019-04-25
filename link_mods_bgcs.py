@@ -8,6 +8,7 @@ from sys import argv
 from multiprocessing import Pool
 from functools import partial
 from collections import Counter
+import time
 
 from copy import deepcopy
 
@@ -38,8 +39,8 @@ def link_mods2bgc(bgc, doms, modules):
         module
     '''
     modlist = []
-    for mod in mods:
-        if all([mod_dom in doms for mod_dom in mod]):
+    for mod in modules:
+        if set(doms).intersection(mod) == set(mod):
             modlist.append(mod)
     return (bgc,modlist)
 
@@ -53,8 +54,6 @@ def link_all_mods2bgcs(bgcs, modules, cores):
     pool = Pool(cores, maxtasksperchild=100)
     bgcs_mod = pool.starmap(partial(link_mods2bgc, modules=modules), \
         bgcs.items())
-    # print(bgcs_mod[:10])
-    print(len(bgcs_mod))
     bgc_mod_dict = {pair[0]:pair[1] for pair in bgcs_mod}
     return bgc_mod_dict
 
@@ -69,7 +68,6 @@ def remove_infr_mods(bgc_mod_dict, modules_dict):
     mod_counts = Counter(modules_dict.keys())
     mod_counts.update([mod for modlist in bgc_mod_dict.values() \
         for mod in modlist])
-    print(len(modules_dict))
     #I initialised all mods with 1 so the if statements says < 3 instead of 2
     infr_mods = [mod for mod, count in mod_counts.items() if count < 3]
     print('\nRemoving {:.1f}% of modules that occur less than twice'.format(\
@@ -88,6 +86,6 @@ if __name__ == '__main__':
     print('\nStart')
     mods, bgcs = read_mods_bgcs(mods_file, bgcs_file)
     bgcs_with_mods = link_all_mods2bgcs(bgcs, mods, cors)
-    remove_infr_mods(bgcs_with_mods, mods)
+    bgcs_with_mods, mods = remove_infr_mods(bgcs_with_mods, mods)
 
     #after finding which occur, I can also figure out where the domains are
