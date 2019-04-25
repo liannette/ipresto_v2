@@ -42,7 +42,7 @@ def link_mods2bgc(bgc, doms, modules):
     for mod in modules:
         if set(doms).intersection(mod) == set(mod):
             modlist.append(mod)
-    return (bgc,modlist)
+    return (bgc,sorted(modlist,key=len))
 
 def link_all_mods2bgcs(bgcs, modules, cores):
     '''Returns a dict of {bgc: [(modules)]}
@@ -78,6 +78,31 @@ def remove_infr_mods(bgc_mod_dict, modules_dict):
         new_bgc_dict[bgc] = [mod for mod in mods if not mod in infr_mods]
     return new_bgc_dict,new_mods_dict
 
+def write_bgcs_and_modules(outfile, clusters, bgc_mod_dict):
+    '''Writes a files containing Bgcname\tDomains\tModules
+
+    clusters: dict linking bgc name to its domains {bgc:[domains]}
+    bgc_mod_dict: dict linking bgc to its modules {bgc: [(modules)]}
+    Before each domain its index is written seperated with a .
+    If there are multiple indeces they are separated with a -
+    Modules are seperated by ';'
+    outfile:
+    clustername    dom1,dom2,dom3,dom2    0.dom1,1-3.dom2,2.dom3;0.dom1,2.dom3
+    '''
+    print('\nWriting file that links bgcs to modules at {}'.format(outfile))
+    with open(outfile, 'w') as outf:
+        for bgc, doms in clusters.items():
+            dom_i = {}
+            for i,dm in enumerate(doms):
+                try:
+                    dom_i[dm].append(str(i))
+                except KeyError:
+                    dom_i[dm] = [str(i)]
+            dom_str = {dm:'-'.join(inds)+'.'+dm for dm,inds in dom_i.items()}
+            mods_str = '; '.join([','.join([dom_str[d] for d in mod]) \
+                for mod in bgc_mod_dict[bgc]])
+            #I could add also as a last column the ids of the modules
+            outf.write('{}\t{}\t{}\n'.format(bgc,','.join(doms),mods_str))
 
 if __name__ == '__main__':
     mods_file = argv[1]
@@ -87,5 +112,9 @@ if __name__ == '__main__':
     mods, bgcs = read_mods_bgcs(mods_file, bgcs_file)
     bgcs_with_mods = link_all_mods2bgcs(bgcs, mods, cors)
     bgcs_with_mods, mods = remove_infr_mods(bgcs_with_mods, mods)
+    bgcmodfile = '{}_bgcs_with_domains.txt'.format(\
+        mods_file.split('_modules.txt')[0])
+    write_bgcs_and_modules(bgcmodfile, bgcs, bgcs_with_mods)
+    
 
     #after finding which occur, I can also figure out where the domains are
