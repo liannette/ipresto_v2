@@ -114,10 +114,14 @@ def get_commands():
     parser.add_argument("-p", "--pval_cutoff", dest="pval_cutoff", \
         default = 0.1, type=float, help='P-value cutoff for determining a \
             significant interaction in module detection (default: 0.1)')
+        parser.add_argument("--use_fastas", dest="use_fastas", default=None, \
+        help="Use already created fasta files from some folder")
+    parser.add_argument("--use_domtabs", dest="use_domtabs", default=None, \
+        help="Use already created domtables from some folder")
     return parser.parse_args()
 
 def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
-    min_genes, cores, verbose):
+    min_genes, cores, verbose, existing_fasta_folder):
     '''Convert gbk files from input folder to fasta files for each gbk file
 
     input_folder, outpu_folder: str
@@ -142,23 +146,24 @@ def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
     pool = Pool(cores, maxtasksperchild=20)
     for file_path in files:
         pool.apply_async(convert_gbk2fasta, args=(file_path, out_fasta,\
-            exclude_contig_edge, min_genes, exclude, verbose), \
-            callback=lambda x: done.append(x))
+            exclude_contig_edge, min_genes, exclude, verbose, \
+            existing_fasta_folder), callback=lambda x: done.append(x))
     pool.close()
     pool.join()
-    processed = len([val for val in done if val])
+    processed = [val for val in done if val]
+    fastas_in_existing_folder = [val for val in processed if type(val)==str]
     excluded = len([val for val in done if val == False])
     filtered = len([val for val in done if val == None])
     print("Processed {} gbk files into {} fasta files.".format(\
-        processed+excluded+filtered, processed))
+        len(processed)+excluded+filtered, len(processed)))
     print(" excluded {} files containing {}".format(excluded,\
         ' or '.join(exclude)))
     print(" filtered {} files that didn't pass constraints".format(\
         filtered))
-    return(out_fasta)
+    return out_fasta, fastas_in_existing_folder
 
 def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
-    exclude, verbose):
+    exclude, verbose, existing_fasta_folder):
     '''Convert one gbk file to a fasta file in out_folder
 
     file_path, out_folder: strings
@@ -169,15 +174,20 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
     Returns True for a successful conversion to fasta, None if there is a
     contig edge or min_genes is not passed. False is returned if any of
     the exclude list is in the filename
+
+    If the fasta file already exists in the existing_fasta_folder, the fasta
+    file is not created, True is returned
     '''
     file_name = os.path.split(file_path)[1]
     if any([word in file_name for word in exclude]):
         return False
     name = file_name.strip('.gbk')
-    outfile = os.path.join(out_folder, '{}.fasta'.format(name))
+    name_extend = '{}.fasta'.format(name)
+    outfile = os.path.join(out_folder, name_extend)
+    existing_file = os.path.join(existing_fasta_folder, name_extend)
     seqs = OrderedDict()
     num_genes = 0
-    if not os.path.exists(outfile):
+    if not os.path.exists(outfile) and not os.path.exists(existing_file):
         try:
             record = next(SeqIO.parse(file_path, 'genbank'))
         except ValueError as e:
@@ -198,7 +208,6 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
                 if seqs[header] == '':
                     print('  {} does not have a translation'.format(header))
                 num_genes +=1
-
         if num_genes < min_genes:
             if verbose:
                 print("  excluding {}: less than {} genes".format(file_path,\
@@ -207,9 +216,12 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
         with open(outfile, 'w') as out:
             for seq in seqs:
                 out.write('{}\n{}\n'.format(seq, seqs[seq]))
+    elif not os.path.exists(outfile):
+            return existing_file
     return True
 
-def run_hmmscan(fasta_file, hmm_file, out_folder, verbose):
+def run_hmmscan(fasta_file, hmm_file, out_folder, verbose, \
+    existing_dom_folder):
     """
     Runs hmmscan on fasta file to generate a domtable file
 
@@ -218,26 +230,40 @@ def run_hmmscan(fasta_file, hmm_file, out_folder, verbose):
     """
     if os.path.isfile(fasta_file):
         name = os.path.split(fasta_file)[1].split('.fasta')[0]
-        out_name = os.path.join(out_folder, name+".domtable")
+        new_name = name+".domtable"
+        out_name = os.path.join(out_folder, new_name)
+        existing_out_name = os.path.join(existing_dom_folder, new_name)
         log = os.path.join(out_folder, 'hmmlog.txt')
-        if not os.path.isfile(out_name):
+        if not os.path.isfile(out_name) and not \
+            os.path.isfile(existing_out_name):
             hmmscan_cmd = (\
                 "hmmscan -o {} --cpu 0 --domtblout {} --cut_tc {} {}".format(\
                 log, out_name, hmm_file, fasta_file))
             if verbose:
                 print("  " + hmmscan_cmd)
             subprocess.check_call(hmmscan_cmd, shell=True)
+        elif not os.path.isfile(out_name):
+            if verbose:
+                print("  {} existed. hmmscan not run again".format(\
+                    existing_out_name))
+            return existing_out_name
         elif verbose:
             print("  {} existed. hmmscan not run again".format(out_name))
     else:
         raise SystemExit("Error running hmmscan: {} doesn't exist".format(\
             fasta_file))
 
-def hmmscan_wrapper(input_folder, hmm_file, verbose, cores):
-    '''Runs hmmscan on all fasta files in input_folder hmm_file as hmm db
+def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
+    existing_fasta_files, existing_dom_folder):
+    '''
+    Runs hmmscan on all fasta files in input_folder with hmm_file as hmm db
 
-    fasta_folder, hmm_file: strings of file paths
-    verbose: bool
+    input_folder, hmm_file: strings of file paths
+    verbose: bool, if True print additional information
+    cores: int, amount of cores to use
+    existing_fasta_files: list of str, filepaths of existing fastas to use
+    existing_dom_folder: str, file path to a folder to see if a domtab
+        already exists
     '''
     if input_folder.endswith('/'):
         out_folder = input_folder[:-7]+'_domtables'
@@ -246,18 +272,25 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores):
     if not os.path.isdir(out_folder):
         subprocess.check_call("mkdir {}".format(out_folder), shell = True)
     print("\nRunning hmmscan on fastas to generate domtables.")
-    files = iglob(os.path.join(input_folder, "*.fasta"))
+    if existing_fasta_files:
+        files = glob(os.path.join(input_folder, "*.fasta")) + \
+            existing_fasta_files
+    else:
+        files = iglob(os.path.join(input_folder, "*.fasta"))
     pool = Pool(cores, maxtasksperchild=1)
-    #maxtasksperchild=1:process respawns after completing 1 task
+    #maxtasksperchild=1:each process respawns after completing 1 task
+    done = []
     for processed, file_path in enumerate(files):
         #run_hmmscan(file_path, hmm_file, out_folder, verbose)
         pool.apply_async(run_hmmscan,args=(file_path, hmm_file,
-            out_folder, verbose))
+            out_folder, verbose, existing_dom_folder), \
+            callback=lambda x: done.append(x))
     pool.close()
     pool.join() #make the code in main wait for the pool processes to finish
+    domtabs_in_existing_folder = [val for val in done if val]
     print("Processed {} fasta files into domtables.".format(\
         processed+1))
-    return out_folder
+    return out_folder, domtabs_in_existing_folder
 
 def parse_domtab(domfile, clus_file, min_overlap, verbose):
     '''Parses domtab into a cluster domain file (csv)
@@ -322,14 +355,19 @@ def sign_overlap(tup1, tup2, cutoff):
             return True
     return False
 
-def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose):
+def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
+    domtabs_in_existing_folder):
     '''Calls parse_domtab on all domtable files to create a clusterfile
 
     in_folder, out_folder: strings, filepaths
     cutoff: float, cutoff value for domain overlap
     '''
     print("\nParsing domtables from folder {}".format(in_folder))
-    domtables = iglob(os.path.join(in_folder, '*.domtable'))
+    if domtabs_in_existing_folder:
+        domtables = glob(os.path.join(in_folder, '*.domtable')) + \
+            domtabs_in_existing_folder
+    else:
+        domtables = iglob(os.path.join(in_folder, '*.domtable'))
     in_name = os.path.split(in_folder)[1].split('_domtables')[0]
     out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
     stat_file = os.path.join(out_folder, in_name+'_domstats.txt')
@@ -485,7 +523,8 @@ def find_representatives(clqs, d_l_dict, graph):
             clus_maxlen = sorted([clus for clus, doml in domlist \
                 if doml == maxdoml])
             if len(clus_maxlen) > 1:
-                min_degr = min([deg for clus, deg in graph.degree(clus_maxlen)])
+                min_degr = min([deg for clus, deg in \
+                    graph.degree(clus_maxlen)])
                 random.seed(1)
                 rep = random.choice([clus for clus in clus_maxlen \
                     if graph.degree(clus) == min_degr])
@@ -1076,12 +1115,13 @@ if __name__ == "__main__":
     cmd = get_commands()
 
     #generating clusters as strings of domains
-    fasta_folder = process_gbks(cmd.in_folder, cmd.out_folder, cmd.exclude,
-        cmd.exclude_contig_edge, cmd.min_genes, cmd.cores, cmd.verbose)
-    dom_folder = hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose,
-        cmd.cores)
+    fasta_folder, exist_fastas = process_gbks(cmd.in_folder, cmd.out_folder,\
+        cmd.exclude, cmd.exclude_contig_edge, cmd.min_genes, cmd.cores, \
+        cmd.verbose, cmd.use_fastas)
+    dom_folder, exist_doms = hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose,
+        cmd.cores, exist_fastas, cmd.use_domtabs)
     clus_file = parse_dom_wrapper(dom_folder, cmd.out_folder, \
-        cmd.domain_overlap_cutoff, cmd.verbose)
+        cmd.domain_overlap_cutoff, cmd.verbose, exist_doms)
 
     #filtering clusters based on similarity
     random.seed(1)
