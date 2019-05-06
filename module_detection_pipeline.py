@@ -515,7 +515,7 @@ def find_representatives(clqs, d_l_dict, graph):
     dels = set() #set of nodes for which a representative has been found
     #make reproducible by making the clqs have the same order every time
     #sort first on secondary key (alphabetical), then on primary (length)
-    clqs = sorted(clqs, key=itemgetter(0,1))
+    clqs = sorted(clqs)
     clqs = sorted(clqs, key=len, reverse=True)
     for cliq in clqs:
         cliq = [clus for clus in cliq if not clus in dels]
