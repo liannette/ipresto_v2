@@ -181,13 +181,16 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
     file_name = os.path.split(file_path)[1]
     if any([word in file_name for word in exclude]):
         return False
-    name = file_name.strip('.gbk')
+    name = file_name.split('.gbk')[0]
     name_extend = '{}.fasta'.format(name)
     outfile = os.path.join(out_folder, name_extend)
-    existing_file = os.path.join(existing_fasta_folder, name_extend)
+    if existing_fasta_folder:
+        existing_file = os.path.join(existing_fasta_folder, name_extend)
+    else:
+        existing_file = 'not_an_existing_file'
     seqs = OrderedDict()
     num_genes = 0
-    if not os.path.exists(outfile) and not os.path.exists(existing_file):
+    if not os.path.isfile(outfile) and not os.path.isfile(existing_file):
         try:
             record = next(SeqIO.parse(file_path, 'genbank'))
         except ValueError as e:
@@ -217,7 +220,9 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
             for seq in seqs:
                 compl_header = '{}/{}'.format(seq,num_genes)
                 out.write('{}\n{}\n'.format(compl_header, seqs[seq]))
-    elif not os.path.exists(outfile):
+    #now it will exist if there is no existing file, if not then there is an
+    #existing file, which is then returned
+    if not os.path.isfile(outfile):
             return existing_file
     return True
 
@@ -233,7 +238,10 @@ def run_hmmscan(fasta_file, hmm_file, out_folder, verbose, \
         name = os.path.split(fasta_file)[1].split('.fasta')[0]
         new_name = name+".domtable"
         out_name = os.path.join(out_folder, new_name)
-        existing_out_name = os.path.join(existing_dom_folder, new_name)
+        if existing_dom_folder:
+            existing_out_name = os.path.join(existing_dom_folder, new_name)
+        else:
+            existing_out_name = 'not_an_existing_file'
         log = os.path.join(out_folder, 'hmmlog.txt')
         if not os.path.isfile(out_name) and not \
             os.path.isfile(existing_out_name):
@@ -243,13 +251,15 @@ def run_hmmscan(fasta_file, hmm_file, out_folder, verbose, \
             if verbose:
                 print("  " + hmmscan_cmd)
             subprocess.check_call(hmmscan_cmd, shell=True)
-        elif not os.path.isfile(out_name):
+        elif os.path.isfile(out_name):
+            if verbose:
+                print("  {} existed. hmmscan not run again".format(out_name))
+        else:
+            #return the existing file
             if verbose:
                 print("  {} existed. hmmscan not run again".format(\
                     existing_out_name))
             return existing_out_name
-        elif verbose:
-            print("  {} existed. hmmscan not run again".format(out_name))
     else:
         raise SystemExit("Error running hmmscan: {} doesn't exist".format(\
             fasta_file))
@@ -277,11 +287,11 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
         files = glob(os.path.join(input_folder, "*.fasta")) + \
             existing_fasta_files
     else:
-        files = iglob(os.path.join(input_folder, "*.fasta"))
+        files = glob(os.path.join(input_folder, "*.fasta"))
     pool = Pool(cores, maxtasksperchild=1)
     #maxtasksperchild=1:each process respawns after completing 1 task
     done = []
-    for processed, file_path in enumerate(files):
+    for file_path in files:
         #run_hmmscan(file_path, hmm_file, out_folder, verbose)
         pool.apply_async(run_hmmscan,args=(file_path, hmm_file,
             out_folder, verbose, existing_dom_folder), \
@@ -290,7 +300,7 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
     pool.join() #make the code in main wait for the pool processes to finish
     domtabs_in_existing_folder = [val for val in done if val]
     print("Processed {} fasta files into domtables.".format(\
-        processed+1))
+        len(files)))
     return out_folder, domtabs_in_existing_folder
 
 def parse_domtab(domfile, clus_file, min_overlap, verbose):
