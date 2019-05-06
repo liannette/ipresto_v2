@@ -513,6 +513,9 @@ def find_representatives(clqs, d_l_dict, graph):
     '''
     reps_dict = OrderedDict()
     dels = set() #set of nodes for which a representative has been found
+    #make reproducible by making the clqs have the same order every time
+    #sort first on secondary key (alphabetical), then on primary (length)
+    clqs = sorted(clqs, key=itemgetter(0,1))
     clqs = sorted(clqs, key=len, reverse=True)
     for cliq in clqs:
         cliq = [clus for clus in cliq if not clus in dels]
@@ -554,7 +557,6 @@ def find_all_representatives(d_l_dict, g):
         '  iteration {}, edges (similarities between bgcs) left: {}'.format(\
             i,subg.number_of_edges()))
         cliqs = nx.algorithms.clique.find_cliques(subg)
-        cliqs = sorted(cliqs, key=len)
         cliqs = [cl for cl in cliqs if len(cl) > 1]
         reps_dict = find_representatives(cliqs, d_l_dict, subg)
         subg = subg.subgraph(reps_dict.keys())
@@ -995,7 +997,7 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
     modules: dict, {(module_tuple):strictest_detection_cutoff}
     bgc_mod_dict: dict of {bgc: [(modules)]}
     '''
-    print('Writing modules to {}'.format(outfile))
+    print('Writing {} modules to {}'.format(len(modules),outfile))
     with open(outfile, 'w') as out:
         if bgc_mod_dict:
             mod_counts = Counter([mod for modlist in bgc_mod_dict.values() \
