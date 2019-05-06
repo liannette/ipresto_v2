@@ -8,7 +8,7 @@ based on similarity, and detect sub-clusters based on a statistical method
 and an LDA alorithm.
 
 Usage:
-python3 preprocessing_bgcs.py -h
+python3 gene_module_detection_pipeline.py -h
 
 Example usage:
 python3 gene_module_detection_pipeline.py -i ./testdata -o ./testdata_domains
@@ -310,13 +310,16 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
         to be considered overlap
 
     clus_file will look like this:
-    Clus1,(dom1;dom2),(-)(gene without domain)\\nClus2,dom1..
+    Clus1,dom1;dom2,-(gene without domain)\\nClus2,dom1..
+    Genes are separated by commas while domains in the genes are separated
+        by ;
     '''
     if verbose:
         print("  parsing domtable {}".format(domfile))
     queries = SearchIO.parse(domfile, 'hmmscan3-domtab')
     cds_before = 0
-    cluster_doms = [] #domain list for the cluster
+    #list of lists for the domains in the cluster where each sublist is a gene
+    cluster_doms = []
     #for every cds that has a hit
     for query in queries:
         dom_matches = []
@@ -340,20 +343,22 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
                             dels.append(j)
                         else:
                             dels.append(i)
-        cds_doms = [dom_matches[i][0] for i in range(len(query)) \
-            if i not in dels]
+        cds_doms = tuple(dom_matches[i][0] for i in range(len(query)) \
+            if i not in dels)
         #if a cds has no domains print '-' in output
         gene_gap = cds_num - cds_before -1
         if gene_gap > 0:
-            cds_doms = ['-']*gene_gap + cds_doms
-        cluster_doms += cds_doms
+            gaps = [('-',) for x in range(gene_gap)]
+            cluster_doms += gaps
+        cluster_doms.append(cds_doms)
         cds_before = cds_num
     end_gap = total_genes - cds_num
     if end_gap > 0:
-        cluster_doms += ['-']*end_gap
+        gaps = [('-',) for x in range(end_gap)]
+        cluster_doms += gaps
     clus_file.write('{},{}\n'.format(\
         os.path.split(domfile)[-1].split('.domtable')[0],
-        ','.join(cluster_doms)))
+        ','.join(';'.join(gene) for gene in cluster_doms)))
     return cluster_doms
 
 def sign_overlap(tup1, tup2, cutoff):
@@ -403,11 +408,11 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
     print(" statistics about doms in {}".format(stat_file))
     return out_file
 
-def read_clusterfile(infile, m_doms, verbose):
+def read_clusterfile(infile, m_gens, verbose):
     """Reads a clusterfile into a dictionary
 
     infile: str, filepath
-    m_doms: int, minimum of domains a cluster should have
+    m_gens: int, minimum of genes with domains a cluster should have
     verbose: bool, if True print additional info
     clusters with less than m_doms domains are not returned
     """
@@ -419,12 +424,12 @@ def read_clusterfile(infile, m_doms, verbose):
         for line in inf:
             line = line.strip().split(',')
             clus = line[0]
-            doms = line[1:]
-            ldoms = len([dom for dom in doms if not dom == '-'])
-            if ldoms < m_doms:
+            doms = [tuple(gene.split(';')) for gene in line[1:]]
+            ldoms = len([dom for dom in doms if not dom == ('-',)])
+            if ldoms < m_gens:
                 filtered +=1
                 if verbose:
-                    print("  excluding {} less than min domains".format(clus))
+                    print("  excluding {} less than min genes".format(clus))
                 continue
             if not clus in clus_dict.keys():
                 clus_dict[clus] = doms
@@ -432,14 +437,14 @@ def read_clusterfile(infile, m_doms, verbose):
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
     print("Done. Read {} clusters".format(len(clus_dict)))
-    print(" {} clusters have less than {} domains and are excluded".format(\
-        filtered,m_doms))
+    print(" {} clusters have less than {} genes and are excluded".format(\
+        filtered,m_gens))
     return clus_dict, len_dict
 
 def calc_adj_index(clus1, clus2):
     '''Returns the adjacency index between two clusters
 
-    clus1, clus2: list of strings, domainlist of a cluster
+    clus1, clus2: list of str, domainlist of a cluster
 
     If there is an empty gene between two domains these two domains are not
         adjacent
@@ -459,10 +464,10 @@ def is_contained(clus1, clus2):
     '''
     Returns a bool if all domains from one of the clusters are in the other
 
-    clus1, clus2: list of strings, domainlist of a cluster
+    clus1, clus2: list of str, domainlist of a cluster
     '''
-    one_in_two = all([dom in clus2 for dom in clus1 if not dom == '-'])
-    two_in_one = all([dom in clus1 for dom in clus2 if not dom == '-'])
+    one_in_two = all(dom in clus2 for dom in clus1 if not dom == '-')
+    two_in_one = all(dom in clus1 for dom in clus2 if not dom == '-')
     if one_in_two or two_in_one:
         return True
     return False
@@ -494,8 +499,10 @@ def generate_edge(pair, d_dict, cutoff):
     A tuple is returned that can be read as an edge by nx.Graph.add_edges_from
     '''
     p1,p2 = pair
-    contained = is_contained(d_dict[p1], d_dict[p2])
-    ai = calc_adj_index(d_dict[p1],d_dict[p2])
+    clus1 = [d for dom in d_dict[p1] for d in dom]
+    clus2 = [d for dom in d_dict[p2] for d in dom]
+    contained = is_contained(clus1, clus2)
+    ai = calc_adj_index(clus1, clus2)
     if ai == None:
         print(ai,pair)
     if contained or ai > cutoff:
@@ -1143,7 +1150,7 @@ if __name__ == "__main__":
 
     #filtering clusters based on similarity
     random.seed(1)
-    dom_dict, doml_dict = read_clusterfile(clus_file, cmd.min_doms, \
+    dom_dict, doml_dict = read_clusterfile(clus_file, cmd.min_genes, \
         cmd.verbose)
     filt_file = '{}_filtered_clusterfile.csv'.format(\
         clus_file.split('_clusterfile.csv')[0])
@@ -1156,7 +1163,7 @@ if __name__ == "__main__":
         dom_dict, filt_file)
 
     #detecting modules with statistical approach
-    f_clus_dict = read_clusterfile(filt_file, cmd.min_doms, cmd.verbose)[0]
+    f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)[0]
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_doms, cmd.verbose)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
