@@ -113,8 +113,8 @@ def get_commands():
         0.95)", type=float)
     parser.add_argument("-p", "--pval_cutoff", dest="pval_cutoff", \
         default = 0.1, type=float, help='P-value cutoff for determining a \
-            significant interaction in module detection (default: 0.1)')
-        parser.add_argument("--use_fastas", dest="use_fastas", default=None, \
+        significant interaction in module detection (default: 0.1)')
+    parser.add_argument("--use_fastas", dest="use_fastas", default=None, \
         help="Use already created fasta files from some folder")
     parser.add_argument("--use_domtabs", dest="use_domtabs", default=None, \
         help="Use already created domtables from some folder")
@@ -513,6 +513,9 @@ def find_representatives(clqs, d_l_dict, graph):
     '''
     reps_dict = OrderedDict()
     dels = set() #set of nodes for which a representative has been found
+    #make reproducible by making the clqs have the same order every time
+    #sort first on secondary key (alphabetical), then on primary (length)
+    clqs = sorted(clqs)
     clqs = sorted(clqs, key=len, reverse=True)
     for cliq in clqs:
         cliq = [clus for clus in cliq if not clus in dels]
@@ -554,7 +557,6 @@ def find_all_representatives(d_l_dict, g):
         '  iteration {}, edges (similarities between bgcs) left: {}'.format(\
             i,subg.number_of_edges()))
         cliqs = nx.algorithms.clique.find_cliques(subg)
-        cliqs = sorted(cliqs, key=len)
         cliqs = [cl for cl in cliqs if len(cl) > 1]
         reps_dict = find_representatives(cliqs, d_l_dict, subg)
         subg = subg.subgraph(reps_dict.keys())
@@ -995,7 +997,7 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
     modules: dict, {(module_tuple):strictest_detection_cutoff}
     bgc_mod_dict: dict of {bgc: [(modules)]}
     '''
-    print('Writing modules to {}'.format(outfile))
+    print('Writing {} modules to {}'.format(len(modules),outfile))
     with open(outfile, 'w') as out:
         if bgc_mod_dict:
             mod_counts = Counter([mod for modlist in bgc_mod_dict.values() \
@@ -1161,7 +1163,7 @@ if __name__ == "__main__":
         mod_file.split('_modules.txt')[0])
     rank_mods = {pair[0]:i+1 for i,pair in enumerate(sorted(modules.items(),\
         key=itemgetter(1)))}
-    write_bgcs_and_modules(bgcmodfile, f_clus_dict, bgcs_with_mods,rank_mods)
+    write_bgcs_and_modules(bgcmodfile,f_clus_dict,bgcs_with_mods,rank_mods)
 
     end = time.time()
     t = end-start
