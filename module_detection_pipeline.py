@@ -8,7 +8,7 @@ based on similarity, and detect sub-clusters based on a statistical method
 and an LDA alorithm.
 
 Usage:
-python3 preprocessing_bgcs.py -h
+python3 module_detection_pipeline.py -h
 
 Example usage:
 python3 module_detection_pipeline.py -i ./testdata -o ./testdata_domains
@@ -215,7 +215,8 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
             return
         with open(outfile, 'w') as out:
             for seq in seqs:
-                out.write('{}\n{}\n'.format(seq, seqs[seq]))
+                compl_header = '{}/{}'.format(seq,num_genes)
+                out.write('{}\n{}\n'.format(compl_header, seqs[seq]))
     elif not os.path.exists(outfile):
             return existing_file
     return True
@@ -308,9 +309,11 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
     queries = SearchIO.parse(domfile, 'hmmscan3-domtab')
     cds_before = 0
     cluster_doms = [] #domain list for the cluster
+    #for every cds that has a hit
     for query in queries:
         dom_matches = []
-        cds_num = int(query.id.split('_')[-1])
+        cds_num, total_genes = map(int,query.id.split('_')[-1].split('/'))
+        #for every hit in each cds
         for hit in query:
             match = hit[0]
             domain = match.hit_id
@@ -321,9 +324,11 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
         if len(query) > 1:
             for i in range(len(query)-1):
                 for j in range(i+1, len(query)):
+                    #if there is a significant overlap delete the one with
+                    #the lower bitscore
                     if sign_overlap(dom_matches[i][1],dom_matches[j][1],
                         min_overlap):
-                        if dom_matches[i][2] >=dom_matches[j][2]:
+                        if dom_matches[i][2] >= dom_matches[j][2]:
                             dels.append(j)
                         else:
                             dels.append(i)
@@ -335,6 +340,9 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
             cds_doms = ['-']*gene_gap + cds_doms
         cluster_doms += cds_doms
         cds_before = cds_num
+    end_gap = total_genes - cds_num
+    if end_gap > 0:
+        cluster_doms += ['-']*end_gap
     clus_file.write('{},{}\n'.format(\
         os.path.split(domfile)[-1].split('.domtable')[0],
         ','.join(cluster_doms)))
