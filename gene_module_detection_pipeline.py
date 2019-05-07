@@ -102,9 +102,9 @@ def get_commands():
     parser.add_argument("-e", "--exclude_contig_edge",
         dest="exclude_contig_edge", default=True, type=bool, help="\
         Exclude clusters that lie on a contig edge")
-    parser.add_argument("-m", "--min_genes", dest="min_genes", default=0,
+    parser.add_argument("-m", "--min_genes", dest="min_genes", default=2,
         help="Provide the minimum size of a BGC to be included in the \
-        analysis. Default is 0 genes", type=int)
+        analysis. Default is 2 genes", type=int)
     parser.add_argument("--min_doms", dest="min_doms", default=2,
         help="The minimum amount of domains in a BGC to be included in the \
         analysis. Default is 2 domains", type=int)
@@ -409,12 +409,15 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
     return out_file
 
 def read_clusterfile(infile, m_gens, verbose):
-    """Reads a clusterfile into a dictionary
+    """Reads a clusterfile into a dictionary of {bgc:[(domains_of_a_gene)]}
 
     infile: str, filepath
     m_gens: int, minimum of genes with domains a cluster should have
     verbose: bool, if True print additional info
-    clusters with less than m_doms domains are not returned
+
+    clusters with less than m_gens genes are not returned
+    It also returns a dict {bgc:amount_of_domains} where -'s are not counted
+    and all domains of all genes are added to an int
     """
     print("\nReading {}".format(infile))
     filtered = 0
@@ -424,15 +427,17 @@ def read_clusterfile(infile, m_gens, verbose):
         for line in inf:
             line = line.strip().split(',')
             clus = line[0]
-            doms = [tuple(gene.split(';')) for gene in line[1:]]
-            ldoms = len([dom for dom in doms if not dom == ('-',)])
-            if ldoms < m_gens:
+            genes = line[1:]
+            g_doms = [tuple(gene.split(';')) for gene in genes]
+            ldoms = len([dom for gene in g_doms for dom in gene \
+                if not dom == '-'])
+            if len([g for g in genes if g != ('-',)]) < m_gens:
                 filtered +=1
                 if verbose:
                     print("  excluding {} less than min genes".format(clus))
                 continue
             if not clus in clus_dict.keys():
-                clus_dict[clus] = doms
+                clus_dict[clus] = g_doms
                 len_dict[clus] = ldoms
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
@@ -499,6 +504,7 @@ def generate_edge(pair, d_dict, cutoff):
     A tuple is returned that can be read as an edge by nx.Graph.add_edges_from
     '''
     p1,p2 = pair
+    #unpack the domains from the gene tuples
     clus1 = [d for dom in d_dict[p1] for d in dom]
     clus2 = [d for dom in d_dict[p2] for d in dom]
     contained = is_contained(clus1, clus2)
@@ -529,7 +535,6 @@ def find_representatives(clqs, d_l_dict, graph):
     clqs: list of lists of strings, cliques of clusters
     d_l_dict: dict of {clus_name:amount_of_domains(int)}
     graph: networkx graph structure of the cliques
-    Returns also the representative in the clique list (dict values)
     The longest cluster is chosen (most domains). If there are multiple
         longest clusters then the cluster with the least connections is
         chosen (to preserve most information).
@@ -544,7 +549,7 @@ def find_representatives(clqs, d_l_dict, graph):
         cliq = [clus for clus in cliq if not clus in dels]
         if cliq:
             domlist = [(clus,d_l_dict[clus]) for clus in cliq]
-            maxdoml = max([doms[1] for doms in domlist])
+            maxdoml = max(doms[1] for doms in domlist)
             #order of cliq changes so to make result reproducible, sort
             clus_maxlen = sorted([clus for clus, doml in domlist \
                 if doml == maxdoml])
@@ -609,6 +614,8 @@ def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
     uniq_list: list of strings, bgcs that are not similar to others
     rep_dict: dict of {representative:[represented]}, links representative
         bgcs to bgcs that are filtered out.
+    dom_dict: dict of {bgc:[(domains_of_a_gene)]}
+    filter_file: str, file path
     Writes two files:
         -filtered_clusterfile.csv: same as clusterfile.csv but without bgcs
         that are filtered out
@@ -621,55 +628,58 @@ def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
     with open(filter_file, 'w') as filt, open(rep_file, 'w') as rep:
         for bgc in uniq_list:
             rep.write(">{}\n".format(bgc))
-            filt.write("{},{}\n".format(bgc, ','.join(dom_dict[bgc])))
+            filt.write("{},{}\n".format(bgc, \
+                ','.join(';'.join(gene) for gene in dom_dict[bgc])))
         for bgc in rep_dict.keys():
             rep.write(">{}\n{}\n".format(bgc, ','.join(rep_dict[bgc])))
-            filt.write("{},{}\n".format(bgc, ','.join(dom_dict[bgc])))
+            filt.write("{},{}\n".format(bgc, \
+                ','.join(';'.join(gene) for gene in dom_dict[bgc])))
     print("\nFiltered clusterfile containing {} bgcs: {}".format(\
         len(uniq_list)+len(rep_dict.keys()),filt_file))
     print("Representative bgcs file: {}".format(rep_file))
     return rep_file
 
-def remove_infr_doms(clusdict, m_doms, verbose):
-    '''Returns clusdict with domains replaced  with - if they occur < 3
+def remove_infr_doms(clusdict, m_gens, verbose):
+    '''Returns clusdict with genes replaced  with (-) if they occur < 3
 
-    clusdict: dict of {cluster:[domains]}
+    clusdict: dict of {cluster:[(domains_of_a_gene)]}
+    m_gens: int, minimal distinct genes a cluster must have to be included
     verbose: bool, if True print additional info
 
-    Deletes clusters with 1 unique dom
+    Deletes clusters with 1 unique gene
     '''
     print('\nRemoving domains that occur less than 3 times')
     domcounter = Counter()
     domcounter.update([v for vals in clusdict.values() for v in vals \
         if not v == '-'])
     deldoms = [key for key in domcounter if domcounter[key] <= 2]
-    print('  {} domains are removed, {} domains are left'.format(\
-        len(deldoms),len(domcounter.keys())-len(deldoms)))
+    print('  {} domains are left, {} domains are removed'.format(\
+        len(domcounter.keys())-len(deldoms),len(deldoms)))
     clus_no_deldoms = {}
     for k,v in clusdict.items():
-        newv = ['-' if dom in deldoms else dom for dom in v]
-        doml = len({v for v in newv if not v == '-'})
-        if doml > 1:
+        newv = [('-',) if dom in deldoms else dom for dom in v]
+        doml = len({v for v in newv if not v == ('-',)})
+        if doml >= m_gens:
             clus_no_deldoms[k] = newv
         else:
             if verbose:
-                print('  {} removed as it has less than 2 domains'.format(k))
+                print('  {} removed as it has less than min_genes'.format(k))
     print(' {} clusters have less than {} domains and are excluded'.format(\
-        len(clusdict.keys()) - len(clus_no_deldoms), m_doms))
+        len(clusdict.keys()) - len(clus_no_deldoms), m_gens))
     return clus_no_deldoms
 
 def remove_dupl_doms(cluster):
     '''
     Replaces duplicate domains in a cluster with '-', writes domain at the end
 
-    cluster: list of strings, domain list
+    cluster: list of tuples, tuples contain str domain names
     '''
     domc = Counter(cluster)
-    dupl = [dom for dom in domc if domc[dom] > 1 if not dom == '-']
+    dupl = [dom for dom in domc if domc[dom] > 1 if not dom == ('-',)]
     if dupl:
-        newclus = ['-' if dom in dupl else dom for dom in cluster]
+        newclus = [('-',) if dom in dupl else dom for dom in cluster]
         for dom in dupl:
-            newclus += ['-',dom]
+            newclus += [('-',),dom]
     else:
         newclus = cluster
     return newclus
@@ -678,7 +688,7 @@ def count_adj(counts, cluster):
     '''Counts all adjacency interactions between domains in a cluster
 
     counts: nested dict { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
-    cluster: list of strings, domains
+    cluster: list of tuples, genes with domains
     '''
     for i, dom in enumerate(cluster):
         if i == 0:
@@ -690,22 +700,22 @@ def count_adj(counts, cluster):
         else:
             edge = 2
             adj = [cluster[i-1],cluster[i+1]]
-            if adj[0] == adj[1] and adj[0] != '-':
+            if adj[0] == adj[1] and adj[0] != ('-',):
                 #B2 and N2 counts
                 prevdom = cluster[i-1]
                 counts[prevdom]['N1'] -= 2
                 counts[prevdom]['N2'] += 1
-                if dom != '-' and dom != prevdom:
+                if dom != ('-',) and dom != prevdom:
                     counts[prevdom]['B1'][dom] -= 2
                     try:
                         counts[prevdom]['B2'][dom] += 1
                     except TypeError:
                         counts[prevdom]['B2'][dom] = 1
-        if not dom == '-':
+        if not dom == ('-',):
             counts[dom]['count'] += 1
             counts[dom]['N1'] += edge
             for ad in adj:
-                if ad != '-' and ad != dom:
+                if ad != ('-',) and ad != dom:
                     try:
                         counts[dom]['B1'][ad] += 1
                     except TypeError:
@@ -715,17 +725,17 @@ def count_coloc(counts, cluster):
     '''Counts all colocalisation interactions between domains in a cluster
 
     counts: nested dict { dom1:{ count:x,N1:y,B1:{dom2:v,dom3:w } } }
-    cluster: list of strings, domains
+    cluster: list of tuples, genes with domains
     verbose: bool, if True print additional info
     '''
     N1 = len(cluster)-1
     for dom in cluster:
-        if not dom == '-':
+        if not dom == ('-',):
             counts[dom]['count'] += 1
             counts[dom]['N1'] += N1
             coloc = set(cluster)
             try:
-                coloc.remove('-')
+                coloc.remove(('-',))
             except KeyError:
                 pass
             coloc.remove(dom)
@@ -743,7 +753,7 @@ def makehash():
 def count_interactions(clusdict, verbose):
     '''Count all adj and coloc interactions between all domains in clusdict
 
-    clusdict: dict of {cluster:[domains]}
+    clusdict: dict of {cluster:[(gene_with_domains)]}
     verbose: bool, if True print additional info
     Returns two dicts, one dict with adj counts and one with coloc counts
     adj counts:
@@ -753,7 +763,7 @@ def count_interactions(clusdict, verbose):
     '''
     print('\nCounting colocalisation and adjacency interactions')
     all_doms = {v for val in clusdict.values() for v in val}
-    all_doms.remove('-')
+    all_doms.remove(('-',))
 
     #initialising count dicts
     adj_counts = makehash()
@@ -780,10 +790,10 @@ def count_interactions(clusdict, verbose):
     return(adj_counts, coloc_counts)
 
 def calc_adj_pval_wrapper(count_dict, clusdict, cores, verbose):
-    '''Returns list of tuples of corrected pvals for each domain pair
+    '''Returns list of tuples of corrected pvals for each gene pair
 
     counts: nested dict { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
-    clusdict: dict of {cluster:[domains]}
+    clusdict: dict of {cluster:[(domains_in_a_gene)]}
     cores: int, amount of cores to use
     verbose: bool, if True print additional information
     '''
@@ -817,10 +827,9 @@ def calc_adj_pval_wrapper(count_dict, clusdict, cores, verbose):
 
 def calc_adj_pval(domval_pair, counts, Nall):
     '''Returns a list of sorted tuples (domA,domB,pval)
-    
-    domA: string of domain name
-    vals: dict of domA interaction info
-        {count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w}}
+
+    domval_pair: tuple of (domA, {count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w}} )
+    Nall: int, all possible positions
     counts: nested dict { domA:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
     '''
     domA, vals = domval_pair
@@ -921,7 +930,7 @@ def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
 
 def keep_lowest_pval(colocs, adjs):
     '''
-    Returns all domain pairs with their lowest pvalue as an edge for n
+    Returns all domain pairs with their lowest pvalue as an edge for nx
 
     colocs, adjs: list of tuples [((dom1,dom2),pval)]
     Tuples look like (dom1,dom2,{pval:x})
@@ -968,7 +977,7 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, \
     '''
     Returns a dict with all modules {(module):strictest_pval_cutoff}
 
-    pval_edges: list of tuples, [(dom1,dom2,pval)]
+    pval_edges: list of tuples, [((dom1),(dom2),pval)]
     sign_cutoff: float, pvalue cutoff
     cores: int, number of cores to use
     verbose: bool, if True print additional information
@@ -1018,7 +1027,7 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
 
     outfile: string, path
     modules: dict, {(module_tuple):strictest_detection_cutoff}
-    bgc_mod_dict: dict of {bgc: [(modules)]}
+    bgc_mod_dict: dict of {bgc: [(modules)]}, default=None
     '''
     print('Writing {} modules to {}'.format(len(modules),outfile))
     with open(outfile, 'w') as out:
@@ -1028,10 +1037,12 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
             header = ['Module_number','Amount','Length',\
                 'Strictest_detection_cutoff','Domains']
             out.write('{}\n'.format('\t'.join(header)))
-            for i,pair in enumerate(sorted(modules.items(), key = itemgetter(1))):
+            for i,pair in enumerate(sorted(modules.items(), \
+                key = itemgetter(1))):
                 mod,p = pair
                 count = mod_counts[mod]
-                info = [i+1,count,len(mod),p,','.join(mod)]
+                info = [i+1,count,len(mod),p,','.join(';'.join(m) for m in \
+                    mod)]
                 out.write('{}\n'.format('\t'.join(map(str,info))))
         else:
             header = ['Length','Strictest_detection_cutoff',\
@@ -1040,25 +1051,30 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
             for i,pair in enumerate(sorted(modules.items(), key = \
                 itemgetter(1))):
                 mod,p = pair
-                out.write('{}\t{}\t{}\n'.format(len(mod),p,','.join(mod)))
+                out.write('{}\t{}\t{}\n'.format(len(mod),p,','.join(\
+                    ';'.join(m) for m in mod)))
 
 def write_bgcs_and_modules(outfile, clusters, bgc_mod_dict, ranked_mods):
     '''Writes a files containing Bgcname\tDomains\tModules
 
     outfile: string, file path
-    clusters: dict linking bgc name to its domains {bgc:[domains]}
+    clusters: dict linking bgc name to its domains {bgc:[(genes_domains)]}
     bgc_mod_dict: dict linking bgc to its modules {bgc: [(modules)]}
     ranked_mods: dict of {(module): number}
     Before each domain its index is written seperated with a .
     If there are multiple indeces they are separated with a -
-    Modules are seperated by ';'
+    Modules are seperated by '; '
     outfile:
-    clustername    dom1,dom2,dom3,dom2    0.dom1,1-3.dom2,2.dom3;0.dom1,2.dom3
+    clustername\tdom1,dom2;dom3,dom1,dom4\t
+        0-2.dom1,3.dom4; 1.dom2;dom3,3.dom4\t
+        number_dom1_dom4; number_dom2/3_dom4
     '''
     print('\nWriting file that links bgcs to modules at {}'.format(outfile))
     with open(outfile, 'w') as outf:
         for bgc, doms in clusters.items():
             dom_i = {}
+            doms = [';'.join(dom) for dom in doms]
+            #find numbers of the doms
             for i,dm in enumerate(doms):
                 try:
                     dom_i[dm].append(str(i))
@@ -1072,14 +1088,13 @@ def write_bgcs_and_modules(outfile, clusters, bgc_mod_dict, ranked_mods):
             outf.write('{}\t{}\t{}\t{}\n'.format(\
                 bgc,','.join(doms),mods_str,mods_nums))
 
-
 def link_mods2bgc(bgc, doms, modules):
     '''Returns a tuple of (bgc, [(modules)])
 
     bgc: string, bgc name
-    doms: list of strings, all domain names in bgc
-    modules: list of tuples of strings, each tuple contains the domains of a
-        module
+    doms: list of tuples, all domain names from the genes in the bgc
+    modules: list of tuples of tuples, each tuple contains the genes of a
+        module, each gene contains domains
     '''
     modlist = []
     for mod in modules:
@@ -1090,8 +1105,8 @@ def link_mods2bgc(bgc, doms, modules):
 def link_all_mods2bgcs(bgcs, modules, cores):
     '''Returns a dict of {bgc: [(modules)]}
 
-    bgcs: dict of {bgc: [domains])
-    modules: list of module tuples
+    bgcs: dict of {bgc: [(domains)])
+    modules: list of module tuples of gene tuples
     cores: int, amount of cores to use
     '''
     pool = Pool(cores, maxtasksperchild=100)
@@ -1131,7 +1146,8 @@ def read_mods_bgcs(modsfile):
         mods_in.readline()
         for line in mods_in:
             line = line.strip().split('\t')
-            mod = tuple(line[-1].split(','))
+            mod = tuple(tuple(gene.split(';')) for gene in \
+                line[-1].split(','))
             mods[mod] = line[-2]
     return mods
 
@@ -1164,7 +1180,7 @@ if __name__ == "__main__":
 
     #detecting modules with statistical approach
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)[0]
-    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_doms, cmd.verbose)
+    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.verbose)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
