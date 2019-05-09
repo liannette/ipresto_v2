@@ -389,19 +389,16 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
     in_name = os.path.split(in_folder)[1].split('_domtables')[0]
     out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
     stat_file = os.path.join(out_folder, in_name+'_domstats.txt')
-    if not os.path.exists(out_file):
-        domc = Counter()
-        with open(out_file, 'w') as out:
-            for domtable in domtables:
-                doms = parse_domtab(domtable, out, cutoff, verbose)
-                domc.update(doms)
-        with open(stat_file, 'w') as stat:
-            stat.write("#Total\t{}".format(sum(domc.values())))
-            for dom, count in domc.most_common():
-                stat.write("{}\t{}\n".format(dom,count))
-    else:
-        print("  clusterfile already existed, did not parse again.")
-    print("Parsing domtables complete, result in {}".format(out_file))
+    domc = Counter()
+    with open(out_file, 'w') as out:
+        for domtable in domtables:
+            doms = parse_domtab(domtable, out, cutoff, verbose)
+            domc.update(doms)
+    with open(stat_file, 'w') as stat:
+        stat.write("#Total\t{}\n".format(sum(domc.values())))
+        for dom, count in domc.most_common():
+            stat.write("{}\t{}\n".format(dom,count))
+    print("Result in {}".format(out_file))
     print(" statistics about doms in {}".format(stat_file))
     return out_file
 
@@ -531,22 +528,16 @@ def find_representatives(clqs, d_l_dict, graph):
     '''
     reps_dict = OrderedDict()
     dels = set() #set of nodes for which a representative has been found
-    #make reproducible by making the clqs have the same order every time
-    #sort first on secondary key (alphabetical), then on primary (length)
-    clqs = sorted(clqs)
-    clqs = sorted(clqs, key=len, reverse=True)
     for cliq in clqs:
         cliq = [clus for clus in cliq if not clus in dels]
         if cliq:
             domlist = [(clus,d_l_dict[clus]) for clus in cliq]
             maxdoml = max([doms[1] for doms in domlist])
-            #order of cliq changes so to make result reproducible, sort
-            clus_maxlen = sorted([clus for clus, doml in domlist \
-                if doml == maxdoml])
+            clus_maxlen = [clus for clus, doml in domlist \
+                if doml == maxdoml]
             if len(clus_maxlen) > 1:
                 min_degr = min([deg for clus, deg in \
                     graph.degree(clus_maxlen)])
-                random.seed(1)
                 rep = random.choice([clus for clus in clus_maxlen \
                     if graph.degree(clus) == min_degr])
             else:
@@ -575,7 +566,11 @@ def find_all_representatives(d_l_dict, g):
         '  iteration {}, edges (similarities between bgcs) left: {}'.format(\
             i,subg.number_of_edges()))
         cliqs = nx.algorithms.clique.find_cliques(subg)
-        cliqs = [cl for cl in cliqs if len(cl) > 1]
+        #make reproducible by making the cliqs have the same order every time
+        #sort first each cliq alphabetically, then cliqs alphabetically,
+        #then on length, so longest are first and order is the same
+        cliqs = sorted(sorted(cl) for cl in cliqs if len(cl) > 1)
+        cliqs.sort(key=len,reverse=True)
         reps_dict = find_representatives(cliqs, d_l_dict, subg)
         subg = subg.subgraph(reps_dict.keys())
         #merge reps_dict with all_reps_dict
@@ -1144,7 +1139,7 @@ if __name__ == "__main__":
         cmd.domain_overlap_cutoff, cmd.verbose, exist_doms)
 
     #filtering clusters based on similarity
-    random.seed(1)
+    random.seed(595)
     dom_dict, doml_dict = read_clusterfile(clus_file, cmd.min_doms, \
         cmd.verbose)
     filt_file = '{}_filtered_clusterfile.csv'.format(\
@@ -1176,7 +1171,7 @@ if __name__ == "__main__":
     bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
     mod_file_f = '{}_filtered_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
-    write_module_file(mod_file_f,mods,bgcs_with_mods)
+    write_module_file(mod_file_f,modules,bgcs_with_mods)
     bgcmodfile = '{}_bgcs_with_domains.txt'.format(\
         mod_file.split('_modules.txt')[0])
     rank_mods = {pair[0]:i+1 for i,pair in enumerate(sorted(modules.items(),\
