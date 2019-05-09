@@ -392,19 +392,16 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
     in_name = os.path.split(in_folder)[1].split('_domtables')[0]
     out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
     stat_file = os.path.join(out_folder, in_name+'_domstats.txt')
-    if not os.path.exists(out_file):
-        domc = Counter()
-        with open(out_file, 'w') as out:
-            for domtable in domtables:
-                doms = parse_domtab(domtable, out, cutoff, verbose)
-                domc.update(doms)
-        with open(stat_file, 'w') as stat:
-            stat.write("#Total\t{}".format(sum(domc.values())))
-            for dom, count in domc.most_common():
-                stat.write("{}\t{}\n".format(dom,count))
-    else:
-        print("  clusterfile already existed, did not parse again.")
-    print("Parsing domtables complete, result in {}".format(out_file))
+    domc = Counter()
+    with open(out_file, 'w') as out:
+        for domtable in domtables:
+            doms = parse_domtab(domtable, out, cutoff, verbose)
+            domc.update(doms)
+    with open(stat_file, 'w') as stat:
+        stat.write("#Total\t{}\n".format(sum(domc.values())))
+        for dom, count in domc.most_common():
+            stat.write("{}\t{}\n".format(';'.join(dom),count))
+    print("Result in {}".format(out_file))
     print(" statistics about doms in {}".format(stat_file))
     return out_file
 
@@ -541,22 +538,16 @@ def find_representatives(clqs, d_l_dict, graph):
     '''
     reps_dict = OrderedDict()
     dels = set() #set of nodes for which a representative has been found
-    #make reproducible by making the clqs have the same order every time
-    #sort first on secondary key (alphabetical), then on primary (length)
-    clqs = sorted(clqs)
-    clqs = sorted(clqs, key=len, reverse=True)
     for cliq in clqs:
         cliq = [clus for clus in cliq if not clus in dels]
         if cliq:
             domlist = [(clus,d_l_dict[clus]) for clus in cliq]
             maxdoml = max(doms[1] for doms in domlist)
-            #order of cliq changes so to make result reproducible, sort
-            clus_maxlen = sorted([clus for clus, doml in domlist \
-                if doml == maxdoml])
+            clus_maxlen = [clus for clus, doml in domlist \
+                if doml == maxdoml]
             if len(clus_maxlen) > 1:
                 min_degr = min([deg for clus, deg in \
                     graph.degree(clus_maxlen)])
-                random.seed(1)
                 rep = random.choice([clus for clus in clus_maxlen \
                     if graph.degree(clus) == min_degr])
             else:
@@ -585,7 +576,11 @@ def find_all_representatives(d_l_dict, g):
         '  iteration {}, edges (similarities between bgcs) left: {}'.format(\
             i,subg.number_of_edges()))
         cliqs = nx.algorithms.clique.find_cliques(subg)
-        cliqs = [cl for cl in cliqs if len(cl) > 1]
+        #make reproducible by making the cliqs have the same order every time
+        #sort first each cliq alphabetically, then cliqs alphabetically,
+        #then on length, so longest are first and order is the same
+        cliqs = sorted(sorted(cl) for cl in cliqs if len(cl) > 1)
+        cliqs.sort(key=len,reverse=True)
         reps_dict = find_representatives(cliqs, d_l_dict, subg)
         subg = subg.subgraph(reps_dict.keys())
         #merge reps_dict with all_reps_dict
@@ -609,31 +604,43 @@ def find_all_representatives(d_l_dict, g):
     return all_reps_dict
 
 def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
-    '''Returns filepaths to filtered_clusterfile.csv and representatives.csv
+    '''Writes three output files and returns filepath to representatives.csv
 
     uniq_list: list of strings, bgcs that are not similar to others
     rep_dict: dict of {representative:[represented]}, links representative
         bgcs to bgcs that are filtered out.
     dom_dict: dict of {bgc:[(domains_of_a_gene)]}
     filter_file: str, file path
-    Writes two files:
+    Writes three files:
         -filtered_clusterfile.csv: same as clusterfile.csv but without bgcs
         that are filtered out
         -representatives.csv: all the bgcs and their representatives as
         >representative\nbgc1,bgc2\n . also uniq_bgcs are there but just as
         >uniq_bgc1\n>uniq_bgc2\n
+        -domstats file only for the representative bgcs
     '''
     rep_file = '{}_representative_bgcs.txt'.format(\
         filter_file.split('_filtered_clusterfile.csv')[0])
+    stat_file = '{}_domstats.txt'.format(\
+        filter_file.split('_clusterfile.csv')[0])
+    domc = Counter()
     with open(filter_file, 'w') as filt, open(rep_file, 'w') as rep:
         for bgc in uniq_list:
             rep.write(">{}\n".format(bgc))
+            dom_tups = dom_dict[bgc]
             filt.write("{},{}\n".format(bgc, \
-                ','.join(';'.join(gene) for gene in dom_dict[bgc])))
+                ','.join(';'.join(gene) for gene in dom_tups)))
+            domc.update(dom_tups)
         for bgc in rep_dict.keys():
             rep.write(">{}\n{}\n".format(bgc, ','.join(rep_dict[bgc])))
+            dom_tups = dom_dict[bgc]
             filt.write("{},{}\n".format(bgc, \
-                ','.join(';'.join(gene) for gene in dom_dict[bgc])))
+                ','.join(';'.join(gene) for gene in dom_tups)))
+            domc.update(dom_tups)
+    with open(stat_file, 'w') as stat:
+        stat.write("#Total\t{}\n".format(sum(domc.values())))
+        for dom, count in domc.most_common():
+            stat.write("{}\t{}\n".format(';'.join(dom),count))
     print("\nFiltered clusterfile containing {} bgcs: {}".format(\
         len(uniq_list)+len(rep_dict.keys()),filt_file))
     print("Representative bgcs file: {}".format(rep_file))
@@ -1034,19 +1041,20 @@ def write_module_file(outfile,modules,bgc_mod_dict = None):
         if bgc_mod_dict:
             mod_counts = Counter([mod for modlist in bgc_mod_dict.values() \
                 for mod in modlist])
-            header = ['Module_number','Amount','Length',\
-                'Strictest_detection_cutoff','Domains']
+            header = ['Number','N_Occurences','N_Genes','N_Domains',\
+                'Strictest_detection_cutoff','Module']
             out.write('{}\n'.format('\t'.join(header)))
             for i,pair in enumerate(sorted(modules.items(), \
                 key = itemgetter(1))):
                 mod,p = pair
                 count = mod_counts[mod]
-                info = [i+1,count,len(mod),p,','.join(';'.join(m) for m in \
-                    mod)]
+                domlen = sum(len(m) for m in mod)
+                info = [i+1,count,len(mod),domlen,p,\
+                    ','.join(';'.join(m) for m in mod)]
                 out.write('{}\n'.format('\t'.join(map(str,info))))
         else:
             header = ['Length','Strictest_detection_cutoff',\
-                'Domains']
+                'Module']
             out.write('{}\n'.format('\t'.join(header)))
             for i,pair in enumerate(sorted(modules.items(), key = \
                 itemgetter(1))):
@@ -1082,8 +1090,8 @@ def write_bgcs_and_modules(outfile, clusters, bgc_mod_dict, ranked_mods):
                     dom_i[dm] = [str(i)]
             dom_str = {dm:'-'.join(inds)+'.'+dm for dm,inds in dom_i.items()}
             mods = bgc_mod_dict[bgc]
-            mods_str = '; '.join([','.join([dom_str[d] for d in mod]) \
-                for mod in mods])
+            mods_str = '; '.join([','.join([dom_str[';'.join(d)] for d in \
+                mod]) for mod in mods])
             mods_nums = '; '.join(map(str,[ranked_mods[mod] for mod in mods]))
             outf.write('{}\t{}\t{}\t{}\n'.format(\
                 bgc,','.join(doms),mods_str,mods_nums))
@@ -1128,12 +1136,12 @@ def remove_infr_mods(bgc_mod_dict, modules_dict):
         for mod in modlist])
     #I initialised all mods with 1 so the if statements says < 3 instead of 2
     infr_mods = [mod for mod, count in mod_counts.items() if count < 3]
-    print('\nRemoving {:.1f}% of modules that occur less than twice'.format(\
-        len(infr_mods)/len(modules_dict)*100))
     for infr_mod in infr_mods:
         del new_mods_dict[infr_mod]
     for bgc,mods in new_bgc_dict.items():
         new_bgc_dict[bgc] = [mod for mod in mods if not mod in infr_mods]
+    print('\nRemoving {:.1f}% of modules that occur less than twice'.format(\
+        (len(modules_dict)-len(new_mods_dict))/len(modules_dict)*100))
     return new_bgc_dict,new_mods_dict
 
 def read_mods_bgcs(modsfile):
@@ -1165,7 +1173,7 @@ if __name__ == "__main__":
         cmd.domain_overlap_cutoff, cmd.verbose, exist_doms)
 
     #filtering clusters based on similarity
-    random.seed(1)
+    random.seed(595)
     dom_dict, doml_dict = read_clusterfile(clus_file, cmd.min_genes, \
         cmd.verbose)
     filt_file = '{}_filtered_clusterfile.csv'.format(\
@@ -1180,7 +1188,7 @@ if __name__ == "__main__":
 
     #detecting modules with statistical approach
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)[0]
-    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.verbose)
+    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes,cmd.verbose)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
@@ -1197,7 +1205,7 @@ if __name__ == "__main__":
     bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
     mod_file_f = '{}_filtered_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
-    write_module_file(mod_file_f,mods,bgcs_with_mods)
+    write_module_file(mod_file_f,modules,bgcs_with_mods)
     bgcmodfile = '{}_bgcs_with_domains.txt'.format(\
         mod_file.split('_modules.txt')[0])
     rank_mods = {pair[0]:i+1 for i,pair in enumerate(sorted(modules.items(),\
