@@ -69,6 +69,7 @@ import networkx as nx
 from operator import itemgetter
 import os
 import random
+import re
 from statsmodels.stats.multitest import multipletests
 import subprocess
 from sympy import binomial as ncr
@@ -118,6 +119,10 @@ def get_commands():
         help="Use already created fasta files from some folder")
     parser.add_argument("--use_domtabs", dest="use_domtabs", default=None, \
         help="Use already created domtables from some folder")
+    parser.add_argument("--include_list", dest="include_list", default=None, \
+        help="If provided only the domains in this file will be taken into \
+        account in the analysis. One line should contain one Pfam ID \
+        (default: None - meaning all Pfams from database)")
     return parser.parse_args()
 
 def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
@@ -1186,6 +1191,15 @@ def filter_out_domains(clusdict,include_list):
         newbgcs[bgc] = newgenes
     return newbgcs
 
+def read_txt(in_file):
+    '''Reads text file into list
+
+    in_file: str, file path
+    '''
+    with open(in_file, 'r') as inf:
+        lines = [line.strip() for line in inf]
+    return lines
+
 if __name__ == "__main__":
     start = time.time()
     cmd = get_commands()
@@ -1219,7 +1233,8 @@ if __name__ == "__main__":
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes,cmd.verbose)
     if cmd.include_list:
-        f_clus_dict_rem = filter_out_domains(f_clus_dict_rem,cmd.include_list)
+        include_list = read_txt(cmd.include_list)
+        f_clus_dict_rem = filter_out_domains(f_clus_dict_rem, include_list)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
