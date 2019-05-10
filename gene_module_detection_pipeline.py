@@ -420,14 +420,11 @@ def read_clusterfile(infile, m_gens, verbose):
     filtered = 0
     with open(infile, 'r') as inf:
         clus_dict = OrderedDict()
-        len_dict = OrderedDict()
         for line in inf:
             line = line.strip().split(',')
             clus = line[0]
             genes = line[1:]
             g_doms = [tuple(gene.split(';')) for gene in genes]
-            ldoms = len([dom for gene in g_doms for dom in gene \
-                if not dom == '-'])
             if len([g for g in genes if g != ('-',)]) < m_gens:
                 filtered +=1
                 if verbose:
@@ -435,13 +432,12 @@ def read_clusterfile(infile, m_gens, verbose):
                 continue
             if not clus in clus_dict.keys():
                 clus_dict[clus] = g_doms
-                len_dict[clus] = ldoms
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
     print("Done. Read {} clusters".format(len(clus_dict)))
     print(" {} clusters have less than {} genes and are excluded".format(\
         filtered,m_gens))
-    return clus_dict, len_dict
+    return clus_dict
 
 def calc_adj_index(clus1, clus2):
     '''Returns the adjacency index between two clusters
@@ -1159,6 +1155,37 @@ def read_mods_bgcs(modsfile):
             mods[mod] = line[-2]
     return mods
 
+def filter_out_domains(clusdict,include_list):
+    '''Returns the same dict only keeping domains from the include_list
+
+    clusdict: dict of {bgc:[(domains_in_genes)]}
+    include_list: list of str, domains to keep
+    '''
+    newbgcs = {}
+    for bgc, genes in clusdict.items():
+        newgenes = []
+        for gene in genes:
+            if gene == ('-',):
+                newgenes.append(gene)
+            else:
+                ngene = []
+                for dom in gene:
+                    #check if domain is a subPfam
+                    m = re.search(r'_c\d+$',dom)
+                    if m:
+                        if dom[:m.start()] in include_list:
+                            ngene.append(dom)
+                    else:
+                        if dom in include_list:
+                            ngene.append(dom)
+                #if gene becomes empty print -
+                if not ngene:
+                    newgenes.append(('-',))
+                else:
+                    newgenes.append(tuple(ngene))
+        newbgcs[bgc] = newgenes
+    return newbgcs
+
 if __name__ == "__main__":
     start = time.time()
     cmd = get_commands()
@@ -1174,8 +1201,10 @@ if __name__ == "__main__":
 
     #filtering clusters based on similarity
     random.seed(595)
-    dom_dict, doml_dict = read_clusterfile(clus_file, cmd.min_genes, \
+    dom_dict = read_clusterfile(clus_file, cmd.min_genes, \
         cmd.verbose)
+    doml_dict = {bgc: sum(len(g) for g in genes if not g == ('-',)) \
+        for bgc,genes in dom_dict.items()}
     filt_file = '{}_filtered_clusterfile.csv'.format(\
         clus_file.split('_clusterfile.csv')[0])
     similar_bgcs = generate_edges(dom_dict, cmd.sim_cutoff,\
@@ -1187,8 +1216,10 @@ if __name__ == "__main__":
         dom_dict, filt_file)
 
     #detecting modules with statistical approach
-    f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)[0]
+    f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes,cmd.verbose)
+    if cmd.include_list:
+        f_clus_dict_rem = filter_out_domains(f_clus_dict_rem,cmd.include_list)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
