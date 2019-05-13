@@ -103,12 +103,12 @@ def get_commands():
     parser.add_argument("-e", "--exclude_contig_edge",
         dest="exclude_contig_edge", default=True, type=bool, help="\
         Exclude clusters that lie on a contig edge")
-    parser.add_argument("-m", "--min_genes", dest="min_genes", default=2,
+    parser.add_argument("-m", "--min_genes", dest="min_genes", default=0,
         help="Provide the minimum size of a BGC to be included in the \
-        analysis. Default is 2 genes", type=int)
-    parser.add_argument("--min_doms", dest="min_doms", default=2,
+        analysis. Default is 0 genes", type=int)
+    parser.add_argument("--min_doms", dest="min_doms", default=0,
         help="The minimum amount of domains in a BGC to be included in the \
-        analysis. Default is 2 domains", type=int)
+        analysis. Default is 0 domains", type=int)
     parser.add_argument("--sim_cutoff", dest="sim_cutoff", default=0.95,
         help="Cutoff for cluster similarity in redundancy filtering (default:\
         0.95)", type=float)
@@ -244,7 +244,7 @@ def run_hmmscan(fasta_file, hmm_file, out_folder, verbose, \
         if existing_dom_folder:
             existing_out_name = os.path.join(existing_dom_folder, new_name)
         else:
-            existing_out_name = 'not_an_existing_file'
+            existing_out_name = './not_an_existing_file'
         log = os.path.join(out_folder, 'hmmlog.txt')
         if not os.path.isfile(out_name) and not \
             os.path.isfile(existing_out_name):
@@ -266,6 +266,7 @@ def run_hmmscan(fasta_file, hmm_file, out_folder, verbose, \
     else:
         raise SystemExit("Error running hmmscan: {} doesn't exist".format(\
             fasta_file))
+    return False
 
 def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
     existing_fasta_files, existing_dom_folder):
@@ -295,9 +296,8 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
     #maxtasksperchild=1:each process respawns after completing 1 task
     done = []
     for file_path in files:
-        #run_hmmscan(file_path, hmm_file, out_folder, verbose)
         pool.apply_async(run_hmmscan,args=(file_path, hmm_file,
-            out_folder, verbose, existing_dom_folder), \
+            out_folder, verbose, existing_dom_folder),
             callback=lambda x: done.append(x))
     pool.close()
     pool.join() #make the code in main wait for the pool processes to finish
@@ -1217,6 +1217,9 @@ if __name__ == "__main__":
     random.seed(595)
     dom_dict = read_clusterfile(clus_file, cmd.min_genes, \
         cmd.verbose)
+    if cmd.include_list:
+        include_list = read_txt(cmd.include_list)
+        dom_dict = filter_out_domains(dom_dict, include_list)
     doml_dict = {bgc: sum(len(g) for g in genes if not g == ('-',)) \
         for bgc,genes in dom_dict.items()}
     filt_file = '{}_filtered_clusterfile.csv'.format(\
@@ -1226,15 +1229,15 @@ if __name__ == "__main__":
     graph = generate_graph(similar_bgcs, True)
     uniq_bgcs = [clus for clus in dom_dict.keys() if not clus in graph.nodes()]
     all_reps = find_all_representatives(doml_dict, graph)
+    if cmd.include_list:
+        include_list = read_txt(cmd.include_list)
+        dom_dict = filter_out_domains(dom_dict, include_list)
     all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps, \
         dom_dict, filt_file)
 
     #detecting modules with statistical approach
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes,cmd.verbose)
-    if cmd.include_list:
-        include_list = read_txt(cmd.include_list)
-        f_clus_dict_rem = filter_out_domains(f_clus_dict_rem, include_list)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,\
         cmd.verbose)
@@ -1256,7 +1259,8 @@ if __name__ == "__main__":
         mod_file.split('_modules.txt')[0])
     rank_mods = {pair[0]:i+1 for i,pair in enumerate(sorted(modules.items(),\
         key=itemgetter(1)))}
-    write_bgcs_and_modules(bgcmodfile,f_clus_dict,bgcs_with_mods,rank_mods)
+    write_bgcs_and_modules(bgcmodfile,f_clus_dict_rem,bgcs_with_mods,\
+        rank_mods)
 
     end = time.time()
     t = end-start
