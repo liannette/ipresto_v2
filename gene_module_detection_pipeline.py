@@ -292,8 +292,8 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
             existing_fasta_files
     else:
         files = glob(os.path.join(input_folder, "*.fasta"))
-    pool = Pool(cores, maxtasksperchild=1)
-    #maxtasksperchild=1:each process respawns after completing 1 task
+    pool = Pool(cores, maxtasksperchild=20)
+    #maxtasksperchild=1:each process respawns after completing 1 chunk
     done = []
     for file_path in files:
         pool.apply_async(run_hmmscan,args=(file_path, hmm_file,
@@ -508,7 +508,7 @@ def generate_edge(pair, d_dict, cutoff):
     contained = is_contained(clus1, clus2)
     ai = calc_adj_index(clus1, clus2)
     if ai == None:
-        print(ai,pair)
+        print('  error in generate_edge: {}'.forat(pair))
     if contained or ai > cutoff:
         # print(pair,ai,contained)
         return(p1,p2,{'ai':ai,'contained':contained})
@@ -656,12 +656,12 @@ def remove_infr_doms(clusdict, m_gens, verbose):
 
     Deletes clusters with 1 unique gene
     '''
-    print('\nRemoving domains that occur less than 3 times')
+    print('\nRemoving domain combinations that occur less than 3 times')
     domcounter = Counter()
     domcounter.update([v for vals in clusdict.values() for v in vals \
         if not v == '-'])
     deldoms = [key for key in domcounter if domcounter[key] <= 2]
-    print('  {} domains are left, {} domains are removed'.format(\
+    print('  {} domain combinations are left, {} are removed'.format(\
         len(domcounter.keys())-len(deldoms),len(deldoms)))
     clus_no_deldoms = {}
     for k,v in clusdict.items():
@@ -1217,9 +1217,6 @@ if __name__ == "__main__":
     random.seed(595)
     dom_dict = read_clusterfile(clus_file, cmd.min_genes, \
         cmd.verbose)
-    if cmd.include_list:
-        include_list = read_txt(cmd.include_list)
-        dom_dict = filter_out_domains(dom_dict, include_list)
     doml_dict = {bgc: sum(len(g) for g in genes if not g == ('-',)) \
         for bgc,genes in dom_dict.items()}
     filt_file = '{}_filtered_clusterfile.csv'.format(\
