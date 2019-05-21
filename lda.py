@@ -10,6 +10,7 @@ from functools import partial
 from collections import Counter
 import time
 from operator import itemgetter
+import os
 from statistics import mean,median
 
 from gensim.models.ldamulticore import LdaMulticore
@@ -19,16 +20,49 @@ from gensim.corpora.dictionary import Dictionary
 import pyLDAvis
 import pyLDAvis.gensim
 
+def remove_infr_doms_str(clusdict, m_gens, verbose):
+    '''Returns clusdict with genes replaced  with - if they occur < 3
+
+    clusdict: dict of {cluster:[domains_of_a_gene]}
+    m_gens: int, minimal distinct genes a cluster must have to be included
+    verbose: bool, if True print additional info
+
+    Deletes clusters with 1 unique gene
+    '''
+    print('\nRemoving domain combinations that occur less than 3 times')
+    domcounter = Counter()
+    domcounter.update([v for vals in clusdict.values() for v in vals \
+        if not v == '-'])
+    deldoms = [key for key in domcounter if domcounter[key] <= 2]
+    print('  {} domain combinations are left, {} are removed'.format(\
+        len(domcounter.keys())-len(deldoms),len(deldoms)))
+    clus_no_deldoms = {}
+    for k,v in clusdict.items():
+        newv = ['-' if dom in deldoms else dom for dom in v]
+        doml = len({v for v in newv if not v == '-'})
+        if doml >= m_gens:
+            clus_no_deldoms[k] = newv
+        else:
+            if verbose:
+                print('  {} removed as it has less than min_genes'.format(k))
+    print(' {} clusters have less than {} domains and are excluded'.format(\
+        len(clusdict.keys()) - len(clus_no_deldoms), m_gens))
+    return clus_no_deldoms
+
 def run_lda(dict_lda, domlist, no_below, no_above, num_topics, modules,cores,\
-    min_f_score, ldavis=True, visname = None):
+    min_f_score, outfolder, ldavis=True):
     '''
     '''
     dict_lda.filter_extremes(no_below=no_below, no_above=no_above)
     print(dict_lda)
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
-    lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
-        id2word=dict_lda, workers=cores)
-    # print(lda)
+    model = os.path.join(outfolder,'lda_model')
+    if not os.path.exists(model):
+        lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
+            id2word=dict_lda, workers=cores, per_word_topics=True)
+        lda.save(model)
+    else:
+        lda = LdaModel.load(model)
     # cs = []
     ldamods = []
     num_sums = []
@@ -84,12 +118,9 @@ def run_lda(dict_lda, domlist, no_below, no_above, num_topics, modules,cores,\
     doc_lda = lda[corpus_bow]
     print(doc_lda[0])
     if ldavis:
-        if not visname:
-            visname = 'lda.html'
+        visname = os.path.join(outfolder,'lda.html')
         vis = pyLDAvis.gensim.prepare(lda, corpus_bow, dict_lda)
         pyLDAvis.save_html(vis, visname)
-        # html = pyLDAvis.prepared_data_to_html(vis)
-        # pyLDAvis.show(html)
 
 if __name__ == '__main__':
     #filtered bgc csv file
@@ -99,8 +130,8 @@ if __name__ == '__main__':
     modfile = argv[3]
     topics = int(argv[4])
     min_feat_score = float(argv[5])
-    if len(argv) == 7:
-        ldavisname = argv[6]
+    out_folder = argv[6]
+    if len(argv) == 8:
         vis = True
     else:
         ldavisname = None
@@ -119,10 +150,11 @@ if __name__ == '__main__':
             line = line.strip().split('\t')
             mod = tuple(line[-1].split(',')) #now a tuple of str
             modules[mod] = line[:-1]
+    bgcs = remove_infr_doms_str(bgcs, 0, False)
     domlist = list(bgcs.values())
     lda_dict = Dictionary(domlist)
     # print(lda_dict)
-    run_lda(lda_dict, domlist, no_below=3, no_above=0.5, num_topics=topics,\
+    run_lda(lda_dict, domlist, no_below=1, no_above=0.5, num_topics=topics,\
             modules=modules, cores=cors, min_f_score=min_feat_score, \
-            ldavis=vis, visname = ldavisname)
+            outfolder=out_folder, ldavis=vis)
     
