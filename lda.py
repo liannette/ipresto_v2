@@ -95,19 +95,29 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     return lda, dict_lda, corpus_bow
 
 def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
-    outfolder, amplif=False):
+    outfolder, amplif=False, min_t_match=0.1, min_feat_match=0.3):
+    '''Analyses the topics in the bgcs
     '''
-    '''
-    # cs = []
-    # ldamods = []
-    num_sums = []
+    #this is a list of tuple (topic_num, 'features_with_scores')
+    lda_topics = lda.print_topics(-1, 50)
+    #get the topic names from the lda html visualisation
+    ldahtml = os.path.join(outfolder, 'lda.html')
+    with open(ldahtml, 'r') as inf:
+        for line in inf:
+            if line.startswith('var lda'):
+                lst_str = line.strip().split('"topic.order": ')[-1]
+                nums = map(int, lst_str.strip('[]};').split(', '))
+                trans = {i_lda-1:i_vis+1 for i_vis,i_lda in \
+                    zip(range(len(lda_topics)), nums)}
     select_features = [] #list with how many features to select to get to
     #a certain score like 0.3 for every topic
     out_topics = os.path.join(outfolder, 'topics.txt')
+    #to record the features as {topic:[(gene,prob)]}, features are selected
+    #until the min_f_score. coul also just select a certain number like 15
+    filt_features = {}
     with open(out_topics,'w') as outf:
-        outf.write('Topic\tDomain_combinations\tScores\n')
-        for top, mod in lda.print_topics(-1, 50):
-            # modstr = {m.split('*')[1].strip('"') for m in mod.split(' + ')}
+        outf.write('Topic\tNumber_LDAvis\tDomain_combinations\tScores\n')
+        for top, mod in lda_topics:
             nums = []
             doms = []
             for m in mod.split(' + '):
@@ -119,43 +129,22 @@ def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
             m_len = len([s.append(num) for num in nums \
                 if sum(s) < min_f_score])
             select_features.append(m_len)
-            num_sums.append(sum(nums))
-            # ldamods.append(tuple(doms[:m_len]))
+            #change 20 into m_len to be able to have a cumulative cutoff
+            filt_features[top] = set(doms[:20])
             #now all features, change to doms[:m_len] for features until min_f
-            outf.write('{}\t{}\t{}\n'.format(top,','.join(doms),\
-                ','.join(map(str,nums))))
-            # coincide = []
-            # for m in modules:
-                # if modstr.intersection(m) == set(m):
-                    # coincide.append((modules[m][0],m))
-            # if coincide:
-                # print(coincide)
-                # cs.append(coincide)
-    #amount of modules overlapping with statistical approach
-    # mods_overlap = len({m for mods in cs for m in mods})
-    # print(num_sums)
-    # print(mean(num_sums),median(num_sums),max(num_sums))
-    l_nonsense = len([zero for zero in num_sums if zero == 0])
-    print('Length of 0 topics:',l_nonsense)
-    sums = [nzero for nzero in num_sums if nzero != 0]
-    # print(select_features)
-    # print('Amount of modules below 10:',len([f for f in select_features if \
-        # f < 10]))
-    # for l,mod in zip(select_features,ldamods):
-        # if l < 10:
-            # print(','.join(sorted(mod)),l)
-    # print(mean(sums),median(sums),max(sums))
-    # print(len(cs),len({m for mods in cs for m in mods}))
-    # print(\
-    # 'Coherence: {}, num_topics: {}, topic_len: {}, mods_overlap: {}'.format(\
-        # coherence, num_topics, topic_len, mods_overlap))
-    # print(lda)
-    #the per document topic matrix, a list of lists with (topic_n, score)
-    # print(doc_lda[0])
+            outf.write('{}\t{}\t{}\t{}\n'.format(top,trans[top],\
+                ','.join(doms),','.join(map(str,nums))))
+    # print(select_features, mean(select_features))
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
         True, amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
     t_matches = retrieve_topic_matches(bgc2topic)
+    top_match_f = os.path.join(outfolder,'matches_per_topic.txt')
+    t_matches = write_topic_matches(t_matches, top_match_f)
+    t_matches = filter_matches(t_matches, filt_features, min_t_match, \
+        min_feat_match)
+    top_match_f_filt = top_match_f.split('.txt')[0]+'_filtered.txt'
+    write_topic_matches(t_matches, top_match_f_filt)
 
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
@@ -208,7 +197,6 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
         x_y, counts = zip(*len_counts.items())
         bgc_len, topic_len = zip(*x_y)
         m_counts = max(len_counts.values())
-        print(m_counts)
         fig, ax = plt.subplots()
         scatter = ax.scatter(bgc_len, topic_len, c=sqrt(counts), s=2.5,vmin=1,\
             vmax=sqrt(m_counts), cmap='hot')
@@ -252,9 +240,10 @@ def link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder):
         #visualise amount of topics per term
 
 def retrieve_topic_matches(bgc2topic):
-    '''
+    '''Turns bgcs with matching topics to topics with matches from bgc
 
     bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
+    topic_matches: {topic:[[prob,(gene,prob)]]}
     '''
     #get all topic matches per topic
     topic_matches = defaultdict(list)
@@ -262,13 +251,52 @@ def retrieve_topic_matches(bgc2topic):
         for k,v in dc.items():
             topic_matches[k].append(v)
     del topic_matches['len']
-    prevalence = {t:len(vals) for t,vals in topic_matches.items()}
-    print(sorted(prevalence.items(),key=lambda x: x[1],reverse=True))
-    print(len(prevalence))
-    for match in sorted(topic_matches[6],key=lambda x: len(x[1])):
-        print(match)
-    # print(topic_matches[6])
+    return topic_matches
 
+def write_topic_matches(topic_matches, outname):
+    '''Writes topic matches to a file sorted on length and alphabet
+
+    topic_matches: {topic:[[prob,(gene,prob)]]}
+    outname: str, filepath
+    '''
+    #occurence of each topic
+    prevl = {t:len(vals) for t,vals in topic_matches.items()}
+    with open(outname,'w') as outf:
+        for topic, matches in sorted(topic_matches.items(), \
+            key=lambda x: x[0]):
+            outf.write('#Topic {}, {} matches\n'.format(topic,prevl[topic]))
+            #sort the matches by length and then by alphabet
+            sorted_matches = sorted(matches,key=lambda x: \
+                (len(x[1]),list(zip(*x[1]))[0]))
+            topic_matches[topic] = matches
+            for match in sorted_matches:
+                outf.write('{:.3f}\t{}\n'.format(match[0],\
+                    ','.join([':'.join(map(str,m)) for m in match[1]])))
+    return topic_matches
+
+def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
+    '''Filters topic_matches based on cutoffs
+
+    topic_matches: {topic:[[prob,(gene,prob)]]}, topic linked to matches
+    topic_features: {topic:set(genes)}, dict of features to use
+    min_t_match: float, minimal score of a topic matching a bgc
+    min_feat_match: float, minimal score of a feature matching in a topic in
+        a bgc
+    '''
+    filt_topic_matches = {}
+    for topic, matches in topic_matches.items():
+        filt_topic_matches[topic] = []
+        use_feats = topic_features[topic]
+        for match in matches:
+            match_p = match[0]
+            if match_p > min_t_match:
+                newfeats = []
+                for feat in match[1]:
+                    if feat[0] in use_feats and feat[1] >= min_feat_match:
+                        newfeats.append(feat)
+                if newfeats:
+                    filt_topic_matches[topic].append([match_p,newfeats])
+    return filt_topic_matches
 
 if __name__ == '__main__':
     start = time.time()
