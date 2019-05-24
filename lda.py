@@ -7,13 +7,17 @@ Script to find modules with LDA algorithm.
 from sys import argv
 from multiprocessing import Pool
 from functools import partial
-from collections import Counter
+from collections import Counter, defaultdict
+import matplotlib
+matplotlib.use('Agg') #to not rely on X-forwarding (not available in screen)
 import matplotlib.pyplot as plt
 import time
 from operator import itemgetter
 import os
 from statistics import mean,median
 import subprocess
+
+from numpy import sqrt
 
 from gensim.models.ldamulticore import LdaMulticore
 from gensim.models.coherencemodel import CoherenceModel
@@ -84,14 +88,14 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     print('Coherence: {}, num_topics: {}'.format(coherence, num_topics))
     if ldavis:
         visname = os.path.join(outfolder,'lda.html')
-        print('vis')
+        print('Running pyLDAvis for visualisation')
         vis = pyLDAvis.gensim.prepare(lda, corpus_bow, dict_lda)
-        print('html')
+        print('  saving visualisation to html')
         pyLDAvis.save_html(vis, visname)
     return lda, dict_lda, corpus_bow
 
 def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
-    outfolder):
+    outfolder, amplif=False):
     '''
     '''
     # cs = []
@@ -148,45 +152,74 @@ def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
     # print(lda)
     #the per document topic matrix, a list of lists with (topic_n, score)
     # print(doc_lda[0])
-    bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder)
+    bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
+        True, amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
+    t_matches = retrieve_topic_matches(bgc2topic)
 
 
-def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=False):
+def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
+    amplif=False):
     '''Returns dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
     
     
-    Writes file to outfolder/bgc_topics.txt
+    Writes file to outfolder/bgc_topics.txt and supplies plots if plot=True
     '''
+    print('\nLinking topics to BGCs')
     doc_lda = lda[corpus_bow]
     doc_topics = os.path.join(outfolder, 'bgc_topics.txt')
     bgc2topic = {}
+    #filter the zip(bgcs,doc_lda) here
+    if amplif:
+        get_index = set(range(0,len(bgcs),amplif))
+        bgc_docs = [(bgcs[i],doc_lda[i]) for i in get_index]
+    else:
+        bgc_docs = zip(bgcs,doc_lda)
     with open(doc_topics,'w') as outf:
-        for bgc, doc_doms in zip(bgcs,doc_lda):
+        for bgc, doc_doms in bgc_docs:
             #doc_doms consists of three lists:
             #1 topics 2 word2topic 3 word2topic with probability
             topd = {tpc:[prob,[]] for tpc,prob in doc_doms[0]}
             for domcomb in doc_doms[2]:
+                #find matching words with probabilities
                 name = dict_lda[domcomb[0]]
-                toptup = domcomb[1]
+                toptup = domcomb[1] #all topic assignments for a word
                 for t in toptup:
+                    #each t is a tuple of (topic, probability)
                     topd[t[0]][1].append((name,t[1]))
             outf.write('>{}\n'.format(bgc))
             outf.write('len={}\n'.format(len(doc_doms[1])))
             for top, info in sorted(topd.items(),key=lambda x: x[1][0],\
                 reverse=True):
-                genes = ','.join(['{};{:.2f}'.format(g,p) for g,p in \
-                    sorted(info[1],key=lambda x: x[1],reverse=True)])
-                string = 'topic={}\n\tp={}\n\tlen={}\n\tgenes={}\n'.format(\
+                s_genes = sorted(info[1],key=lambda x: x[1],reverse=True)
+                topd[top][1] = s_genes #sort matching genes - high to low p
+                genes = ','.join(['{}:{:.2f}'.format(g,p) for g,p in s_genes])
+                string='topic={}\n\tp={}\n\tlen={}\n\tgenes={}\n'.format(\
                     top,info[0], len(info[1]), genes)
                 outf.write(string)
             topd['len'] = len(doc_doms[1])
             bgc2topic[bgc] = topd
     if plot:
+        print('Plotting')
         #extract length of each bgc vs len of topic in each bgc
-        bgc_len,topic_len = list(zip(*((val['len'],len(val[t][1])) for val in\
-            bgc2topic.values() for t in val if not t == 'len')))
-        plt.scatter(bgc_len,topic_len, s=2)
+        lengths = ((val['len'],len(val[t][1])) for val in\
+            bgc2topic.values() for t in val if not t == 'len')
+        len_counts = Counter(lengths)
+        x_y, counts = zip(*len_counts.items())
+        bgc_len, topic_len = zip(*x_y)
+        m_counts = max(len_counts.values())
+        print(m_counts)
+        fig, ax = plt.subplots()
+        scatter = ax.scatter(bgc_len, topic_len, c=sqrt(counts), s=2.5,vmin=1,\
+            vmax=sqrt(m_counts), cmap='hot')
+        leg_range = [1]+[round(x,-1) for x in \
+            range(20,m_counts,int(m_counts/4))]
+        if len(leg_range) == 4:
+            leg_range.append(round(m_counts,-1))
+        kw = dict(num=leg_range,func=lambda c: c**2)
+        legend = ax.legend(*scatter.legend_elements(**kw), loc='upper left',\
+            title='Occurrence')
+        ax.add_artist(legend)
         plt.xlabel('Length BGC')
         plt.ylabel('Length topic match')
         plt.title('Length of a BGC vs length of matching topic')
@@ -194,12 +227,11 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=False):
 
         #count amount of topics per bgc
         topics_per_bgc = Counter([len(vals)-1 for vals in bgc2topic.values()])
-        print(topics_per_bgc)
         xs = range(max(topics_per_bgc)+1)
         h = [topics_per_bgc[x] if x in topics_per_bgc else 0 for x in xs]
         plt.close()
         plt.bar(xs, h)
-        plt.xlabel('Amount of topics per BGC')
+        plt.xlabel('Number of topics per BGC')
         plt.ylabel('Occurence')
         plt.title('Topics per BGC')
         plt.savefig(os.path.join(outfolder,'topics_per_bgc.pdf'))
@@ -219,7 +251,27 @@ def link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder):
             outf.write('{}\t{}\n'.format(d_name, dom_top_str))
         #visualise amount of topics per term
 
+def retrieve_topic_matches(bgc2topic):
+    '''
+
+    bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
+    '''
+    #get all topic matches per topic
+    topic_matches = defaultdict(list)
+    for dc in bgc2topic.values():
+        for k,v in dc.items():
+            topic_matches[k].append(v)
+    del topic_matches['len']
+    prevalence = {t:len(vals) for t,vals in topic_matches.items()}
+    print(sorted(prevalence.items(),key=lambda x: x[1],reverse=True))
+    print(len(prevalence))
+    for match in sorted(topic_matches[6],key=lambda x: len(x[1])):
+        print(match)
+    # print(topic_matches[6])
+
+
 if __name__ == '__main__':
+    start = time.time()
     #filtered bgc csv file
     bgcfile = argv[1]
     cors = int(argv[2])
@@ -265,5 +317,9 @@ if __name__ == '__main__':
     lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
     num_topics=topics, cores=cors, outfolder=out_folder, ldavis=vis)
     process_lda(lda, lda_dict, bow_corpus, modules, min_feat_score, \
-        bgclist, out_folder)
-    
+        bgclist, out_folder, amplif=amplify)
+
+    end = time.time()
+    t = end-start
+    t_str = '{}h{}m{}s'.format(int(t/3600),int(t%3600/60),int(t%3600%60))
+    print('\nScript completed in {}'.format(t_str))
