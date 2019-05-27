@@ -123,6 +123,10 @@ def get_commands():
         help="If provided only the domains in this file will be taken into \
         account in the analysis. One line should contain one Pfam ID \
         (default: None - meaning all Pfams from database)")
+    parser.add_argument("--start_from_clusterfile", default=None, help="A file\
+        with BGCs and domain-combinations to start with (csv and domains in a\
+        gene separated by ';'). This overwrites in_folder (which still has to\
+        be supplied symbolically) and use_domtabs/use_fastas.")
     return parser.parse_args()
 
 def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
@@ -1209,14 +1213,24 @@ if __name__ == "__main__":
     start = time.time()
     cmd = get_commands()
 
-    #generating clusters as strings of domains
-    fasta_folder, exist_fastas = process_gbks(cmd.in_folder, cmd.out_folder,\
-        cmd.exclude, cmd.exclude_contig_edge, cmd.min_genes, cmd.cores, \
-        cmd.verbose, cmd.use_fastas)
-    dom_folder, exist_doms = hmmscan_wrapper(fasta_folder, cmd.hmm_path, cmd.verbose,
-        cmd.cores, exist_fastas, cmd.use_domtabs)
-    clus_file = parse_dom_wrapper(dom_folder, cmd.out_folder, \
-        cmd.domain_overlap_cutoff, cmd.verbose, exist_doms)
+    #converting genes in each bgc to a combination of domains
+    if cmd.start_from_clusterfile:
+        if not os.path.isdir(cmd.out_folder):
+            f_command = 'mkdir {}'.format(cmd.out_folder)
+            subprocess.check_call(f_command,shell=True)
+        filepre = os.path.split(cmd.start_from_clusterfile)[-1].split(\
+            '.csv')[0]
+        clus_file = os.path.join(cmd.out_folder, filepre+'_clusterfile.csv')
+        c_command = 'cp {} {}'.format(cmd.start_from_clusterfile,clus_file)
+        subprocess.check_call(c_command, shell=True)
+    else:
+        fasta_folder, exist_fastas = process_gbks(cmd.in_folder, \
+            cmd.out_folder, cmd.exclude, cmd.exclude_contig_edge, \
+            cmd.min_genes, cmd.cores, cmd.verbose, cmd.use_fastas)
+        dom_folder, exist_doms = hmmscan_wrapper(fasta_folder, cmd.hmm_path,\
+            cmd.verbose, cmd.cores, exist_fastas, cmd.use_domtabs)
+        clus_file = parse_dom_wrapper(dom_folder, cmd.out_folder, \
+            cmd.domain_overlap_cutoff, cmd.verbose, exist_doms)
 
     #filtering clusters based on similarity
     random.seed(595)
