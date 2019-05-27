@@ -358,7 +358,7 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
         cluster_doms.append(cds_doms)
         cds_before = cds_num
     if cds_before == 0:
-        print(' excluding {} no domains present'.format(domfile))
+        print(' excluding {} no domain hits present'.format(domfile))
         return
     end_gap = total_genes - cds_num
     if end_gap > 0:
@@ -701,6 +701,8 @@ def count_adj(counts, cluster):
     counts: nested dict { dom1:{ count:x,N1:y,N2:z,B1:{dom2:v},B2:{dom2:w} } }
     cluster: list of tuples, genes with domains
     '''
+    if len(cluster) == 1:
+        return
     for i, dom in enumerate(cluster):
         if i == 0:
             edge = 1
