@@ -3,21 +3,20 @@
 Author: Joris Louwen
 Script to find modules with LDA algorithm.
 """
-
-from sys import argv
-from multiprocessing import Pool
-from functools import partial
+import argparse
 from collections import Counter, defaultdict
+from functools import partial
 import matplotlib
 matplotlib.use('Agg') #to not rely on X-forwarding (not available in screen)
 import matplotlib.pyplot as plt
-import time
+from multiprocessing import Pool, cpu_count
+from numpy import sqrt
 from operator import itemgetter
 import os
 from statistics import mean,median
 import subprocess
-
-from numpy import sqrt
+from sys import argv
+import time
 
 from gensim.models.ldamulticore import LdaMulticore
 from gensim.models.coherencemodel import CoherenceModel
@@ -25,6 +24,44 @@ from gensim.corpora.dictionary import Dictionary
 
 import pyLDAvis
 import pyLDAvis.gensim
+
+def get_commands():
+    parser = argparse.ArgumentParser(description="A script to cluster genes\
+        from BGCs represented as strings of domains with the LDA algorithm\
+        to discover sub-clusters of genes which putatively synthesise a\
+        chemical moiety in the natural product.")
+    parser.add_argument("-i", "--bgcfile", dest="bgcfile", help="Input \
+        csv file of BGCs with genes as domain combinations", required=True)
+    parser.add_argument("-m", "--modfile", dest="modfile", help="Input \
+        txt file of putative modules to compare. Last column should contain\
+        modules", default=False)
+    parser.add_argument("-o", "--out_folder", dest="out_folder", help="Output\
+        folder", required=True)
+    parser.add_argument("-c", "--cores", dest="cores", help="Amount \
+        of cores to use for the LDA model, default = all available cores",\
+        default=cpu_count(), type=int)
+    parser.add_argument("-t", "--topics", dest="topics", help="Amount \
+        of topics to use for the LDA model", required=True, type=int)
+    parser.add_argument("-f", "--min_feat_score", dest="min_feat_score",
+        help="Only include features until their scores add up to this number.\
+        Default = 0.9. Can be combined with feat_num, where feat_num features\
+        are selected or features that add up to min_feat_score",type=float, \
+        default=0.9)
+    parser.add_argument("-n", "--feat_num", dest="feat_num",
+        help="Include the first feat_num features for each topic, \
+        default = 10.",type=int, default=15)
+    parser.add_argument("-a", "--amplify", dest="amplify", help="Amplify \
+        the dataset in order to achieve a better LDA model. Each BGC will be\
+        present amplify times in the dataset. After calculating the LDA model \
+        the dataset will be scaled back to normal.",type=int, default=0)
+    parser.add_argument("-v", "--visualise", help="Make a visualation of the\
+        LDA model with pyLDAvis (html file). If number of topics is too big\
+        this might fail. No visualisation will then be made", default=False,
+        action="store_true")
+    parser.add_argument("--classes", help="A file containing classes of the \
+        BGCs used in the analysis. First column should contain matching BGC\
+        names. Consecutive columns should contain classes.", default=False)
+    return parser.parse_args()
 
 def remove_infr_doms_str(clusdict, m_gens, verbose):
     '''Returns clusdict with genes replaced  with - if they occur < 3
@@ -95,7 +132,8 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     return lda, dict_lda, corpus_bow
 
 def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
-    outfolder, amplif=False, min_t_match=0.1, min_feat_match=0.3):
+    outfolder, amplif=False, min_t_match=0.1, min_feat_match=0.3, \
+    bgc_classes=False):
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
@@ -130,7 +168,7 @@ def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
                 if sum(s) < min_f_score])
             select_features.append(m_len)
             #change 20 into m_len to be able to have a cumulative cutoff
-            filt_features[top] = set(doms[:20])
+            filt_features[top] = set(doms[:15])
             #now all features, change to doms[:m_len] for features until min_f
             outf.write('{}\t{}\t{}\t{}\n'.format(top,trans[top],\
                 ','.join(doms),','.join(map(str,nums))))
@@ -145,6 +183,8 @@ def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
         min_feat_match)
     top_match_f_filt = top_match_f.split('.txt')[0]+'_filtered.txt'
     write_topic_matches(t_matches, top_match_f_filt)
+    bgc_with_topics = retrieve_match_per_bgc(top_matches)
+    bgc_topic_heatmap(bgc_with_topics, bgc_classes)
 
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
@@ -243,15 +283,27 @@ def retrieve_topic_matches(bgc2topic):
     '''Turns bgcs with matching topics to topics with matches from bgc
 
     bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
-    topic_matches: {topic:[[prob,(gene,prob)]]}
+    topic_matches: {topic:[[prob,(gene,prob),bgc]]}
     '''
     #get all topic matches per topic
     topic_matches = defaultdict(list)
-    for dc in bgc2topic.values():
+    for bgc,dc in bgc2topic.items():
         for k,v in dc.items():
-            topic_matches[k].append(v)
+            topic_matches[k].append(v.append(bgc))
     del topic_matches['len']
     return topic_matches
+
+def retrieve_match_per_bgc(topic_matches):
+    '''Turns topics with matches back into bgc with matches
+
+    topic_matches: {topic:[[prob,(gene,prob),bgc]]}
+    bgc2topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
+    '''
+    bgc2topic = defaultdict(list)
+    for topic,info in topic_matches.items():
+        for match in info:
+            bgc2topic[info[2]].append([topic]+info[:2])
+    return bgc2topic
 
 def write_topic_matches(topic_matches, outname):
     '''Writes topic matches to a file sorted on length and alphabet
@@ -270,14 +322,14 @@ def write_topic_matches(topic_matches, outname):
                 (len(x[1]),list(zip(*x[1]))[0]))
             topic_matches[topic] = matches
             for match in sorted_matches:
-                outf.write('{:.3f}\t{}\n'.format(match[0],\
-                    ','.join([':'.join(map(str,m)) for m in match[1]])))
+                outf.write('{:.3f}\t{}\n'.format(match[0], ','.join(\
+                ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]])))
     return topic_matches
 
 def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
     '''Filters topic_matches based on cutoffs
 
-    topic_matches: {topic:[[prob,(gene,prob)]]}, topic linked to matches
+    topic_matches: {topic:[[prob,(gene,prob)],bgc]}, topic linked to matches
     topic_features: {topic:set(genes)}, dict of features to use
     min_t_match: float, minimal score of a topic matching a bgc
     min_feat_match: float, minimal score of a feature matching in a topic in
@@ -289,63 +341,60 @@ def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
         use_feats = topic_features[topic]
         for match in matches:
             match_p = match[0]
+            bgc = match[2]
             if match_p > min_t_match:
                 newfeats = []
                 for feat in match[1]:
                     if feat[0] in use_feats and feat[1] >= min_feat_match:
                         newfeats.append(feat)
                 if newfeats:
-                    filt_topic_matches[topic].append([match_p,newfeats])
+                    filt_topic_matches[topic].append([match_p,newfeats,bgc])
     return filt_topic_matches
+
+def bgc_topic_heatmap(bgc_with_topic, bgc_classes):
+    '''Make a clustered heatmap of bgcs and topics, and optional bgc_classes
+
+    bgc_with_topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
+    bgc_classes: dict of {bgc:[[class1,class2]]}
+    '''
+    #make pd dataframe from bgc with topic with prob as value for present tpic
+    #
 
 if __name__ == '__main__':
     start = time.time()
-    #filtered bgc csv file
-    bgcfile = argv[1]
-    cors = int(argv[2])
-    #filtered module file
-    modfile = argv[3]
-    topics = int(argv[4])
-    min_feat_score = float(argv[5])
-    out_folder = argv[6]
-    if len(argv) > 7:
-        amplify = int(argv[7])
-    else:
-        amplify = False
-    if len(argv) == 9:
-        vis = True
-    else:
-        ldavisname = None
-        vis = False
+    #files provided should be filtered bgc csv file and filtered module file
 
+    cmd = get_commands()
     print('\nStart')
-    with open(bgcfile, 'r') as inf:
+    with open(cmd.bgcfile, 'r') as inf:
         bgcs = {}
         for line in inf:
             line = line.strip().split(',')
             bgcs[line[0]] = line[1:]
-    with open(modfile, 'r') as inf:
+    with open(cmd.modfile, 'r') as inf:
         modules = {}
         #{modules:[info]}
         for line in inf:
             line = line.strip().split('\t')
             mod = tuple(line[-1].split(',')) #now a tuple of str
             modules[mod] = line[:-1]
-    if not os.path.isdir(out_folder):
-        subprocess.check_call('mkdir {}'.format(out_folder), shell=True)
+    if not os.path.isdir(cmd.out_folder):
+        subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
     bgcs = remove_infr_doms_str(bgcs, 0, False)
-    if amplify:
+    if cmd.amplify:
         bgc_items = []
         for bgc in bgcs.items():
-            bgc_items += [bgc]*amplify
+            bgc_items += [bgc]*cmd.amplify
         bgclist, domlist = zip(*bgc_items)
     else:
         bgclist, domlist = zip(*bgcs.items())
 
     lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
-    num_topics=topics, cores=cors, outfolder=out_folder, ldavis=vis)
-    process_lda(lda, lda_dict, bow_corpus, modules, min_feat_score, \
-        bgclist, out_folder, amplif=amplify)
+        num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
+        ldavis=cmd.visualise)
+    process_lda(lda, lda_dict, bow_corpus, modules, cmd.min_feat_score, \
+        bgclist, cmd.out_folder, amplif=cmd.amplify, bgc_classes=\
+        bgc_classes_dict)
 
     end = time.time()
     t = end-start
