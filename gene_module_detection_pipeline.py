@@ -357,6 +357,9 @@ def parse_domtab(domfile, clus_file, min_overlap, verbose):
             cluster_doms += gaps
         cluster_doms.append(cds_doms)
         cds_before = cds_num
+    if cds_before == 0:
+        print(' excluding {} no domains present'.format(domfile))
+        return
     end_gap = total_genes - cds_num
     if end_gap > 0:
         gaps = [('-',) for x in range(end_gap)]
@@ -659,7 +662,7 @@ def remove_infr_doms(clusdict, m_gens, verbose):
     print('\nRemoving domain combinations that occur less than 3 times')
     domcounter = Counter()
     domcounter.update([v for vals in clusdict.values() for v in vals \
-        if not v == '-'])
+        if not v == ('-',)])
     deldoms = [key for key in domcounter if domcounter[key] <= 2]
     print('  {} domain combinations are left, {} are removed'.format(\
         len(domcounter.keys())-len(deldoms),len(deldoms)))
