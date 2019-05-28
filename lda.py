@@ -9,10 +9,14 @@ from functools import partial
 import matplotlib
 matplotlib.use('Agg') #to not rely on X-forwarding (not available in screen)
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
+from mpl_toolkits.axes_grid1.colorbar import colorbar
 from multiprocessing import Pool, cpu_count
 from numpy import sqrt
 from operator import itemgetter
 import os
+import pandas as pd
+import seaborn as sns
 from statistics import mean,median
 import subprocess
 from sys import argv
@@ -49,7 +53,7 @@ def get_commands():
         default=0.9)
     parser.add_argument("-n", "--feat_num", dest="feat_num",
         help="Include the first feat_num features for each topic, \
-        default = 10.",type=int, default=15)
+        default = 15.",type=int, default=15)
     parser.add_argument("-a", "--amplify", dest="amplify", help="Amplify \
         the dataset in order to achieve a better LDA model. Each BGC will be\
         present amplify times in the dataset. After calculating the LDA model \
@@ -131,22 +135,26 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
         pyLDAvis.save_html(vis, visname)
     return lda, dict_lda, corpus_bow
 
-def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
-    outfolder, amplif=False, min_t_match=0.1, min_feat_match=0.3, \
+def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, min_f_score,
+    bgcs, outfolder, amplif=False, min_t_match=0.1, min_feat_match=0.3, \
     bgc_classes=False):
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
     lda_topics = lda.print_topics(-1, 50)
+    topic_num = len(lda_topics)
     #get the topic names from the lda html visualisation
     ldahtml = os.path.join(outfolder, 'lda.html')
-    with open(ldahtml, 'r') as inf:
-        for line in inf:
-            if line.startswith('var lda'):
-                lst_str = line.strip().split('"topic.order": ')[-1]
-                nums = map(int, lst_str.strip('[]};').split(', '))
-                trans = {i_lda-1:i_vis+1 for i_vis,i_lda in \
-                    zip(range(len(lda_topics)), nums)}
+    if os.path.isfile(ldahtml):
+        with open(ldahtml, 'r') as inf:
+            for line in inf:
+                if line.startswith('var lda'):
+                    lst_str = line.strip().split('"topic.order": ')[-1]
+                    nums = map(int, lst_str.strip('[]};').split(', '))
+                    trans = {i_lda-1:i_vis+1 for i_vis,i_lda in \
+                        zip(range(topic_num), nums)}
+    else:
+        trans = {x:'-' for x in range(topic_num)}
     select_features = [] #list with how many features to select to get to
     #a certain score like 0.3 for every topic
     out_topics = os.path.join(outfolder, 'topics.txt')
@@ -167,14 +175,16 @@ def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
             m_len = len([s.append(num) for num in nums \
                 if sum(s) < min_f_score])
             select_features.append(m_len)
-            #change 20 into m_len to be able to have a cumulative cutoff
-            filt_features[top] = set(doms[:15])
+            if m_len > feat_num:
+                filt_features[top] = set(doms[:feat_num])
+            else:
+                filt_features[top] = set(doms[:m_len])
             #now all features, change to doms[:m_len] for features until min_f
             outf.write('{}\t{}\t{}\t{}\n'.format(top,trans[top],\
                 ','.join(doms),','.join(map(str,nums))))
     # print(select_features, mean(select_features))
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
-        True, amplif)
+        plot=True, amplif=amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
     t_matches = retrieve_topic_matches(bgc2topic)
     top_match_f = os.path.join(outfolder,'matches_per_topic.txt')
@@ -183,8 +193,11 @@ def process_lda(lda, dict_lda, corpus_bow, modules, min_f_score, bgcs, \
         min_feat_match)
     top_match_f_filt = top_match_f.split('.txt')[0]+'_filtered.txt'
     write_topic_matches(t_matches, top_match_f_filt)
-    bgc_with_topics = retrieve_match_per_bgc(top_matches)
-    bgc_topic_heatmap(bgc_with_topics, bgc_classes)
+    bgc_with_topics = retrieve_match_per_bgc(t_matches)
+    bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
+        metric='euclidean')
+    bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
+        metric='correlation')
 
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
@@ -283,14 +296,15 @@ def retrieve_topic_matches(bgc2topic):
     '''Turns bgcs with matching topics to topics with matches from bgc
 
     bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
-    topic_matches: {topic:[[prob,(gene,prob),bgc]]}
+    topic_matches: {topic:[[prob,[(gene,prob)],bgc]]}
     '''
     #get all topic matches per topic
     topic_matches = defaultdict(list)
     for bgc,dc in bgc2topic.items():
         for k,v in dc.items():
-            topic_matches[k].append(v.append(bgc))
-    del topic_matches['len']
+            if not k == 'len':
+                v.append(bgc)
+                topic_matches[k].append(v)
     return topic_matches
 
 def retrieve_match_per_bgc(topic_matches):
@@ -302,7 +316,7 @@ def retrieve_match_per_bgc(topic_matches):
     bgc2topic = defaultdict(list)
     for topic,info in topic_matches.items():
         for match in info:
-            bgc2topic[info[2]].append([topic]+info[:2])
+            bgc2topic[match[2]].append([topic]+match[:2])
     return bgc2topic
 
 def write_topic_matches(topic_matches, outname):
@@ -320,7 +334,7 @@ def write_topic_matches(topic_matches, outname):
             #sort the matches by length and then by alphabet
             sorted_matches = sorted(matches,key=lambda x: \
                 (len(x[1]),list(zip(*x[1]))[0]))
-            topic_matches[topic] = matches
+            topic_matches[topic] = sorted_matches
             for match in sorted_matches:
                 outf.write('{:.3f}\t{}\n'.format(match[0], ','.join(\
                 ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]])))
@@ -351,14 +365,60 @@ def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
                     filt_topic_matches[topic].append([match_p,newfeats,bgc])
     return filt_topic_matches
 
-def bgc_topic_heatmap(bgc_with_topic, bgc_classes):
+def bgc_topic_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
+    metric='euclidean'):
     '''Make a clustered heatmap of bgcs and topics, and optional bgc_classes
 
     bgc_with_topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
     bgc_classes: dict of {bgc:[[class1,class2]]}
+    topic_num: int, number of topics in the model
+    
     '''
+    print('\nMaking clustered heatmap, metric: {}'.format(metric))
     #make pd dataframe from bgc with topic with prob as value for present tpic
-    #
+    bgcs, topics = zip(*bgc_with_topic.items())
+    data = [{v[0]:v[1] for v in val} for val in topics]
+    df = pd.DataFrame(data,index=bgcs,columns=list(range(topic_num)))
+    df = df.fillna(0)
+    #colour rows by bgc class
+    labels = [bgc_classes[bgc][0] if bgc in bgc_classes else 'None' for bgc \
+        in bgcs]
+    #get colours
+    lut = dict(zip(sorted(set(labels)), sns.hls_palette(len(set(labels)))))
+    if 'None' in lut:
+        lut['None'] = 'w' #make None always white
+    row_labs = pd.DataFrame(labels,index=bgcs,columns=['BGC classes'])
+    row_colours = row_labs['BGC classes'].map(lut) #map colour to a label
+    g = sns.clustermap(df, cmap = 'Blues', row_colors = row_colours, \
+        linewidths = 0, metric=metric, yticklabels=False, xticklabels=False, \
+        cbar_kws = {'orientation':'horizontal'},vmin=0,vmax=1)
+    #don't show dendrograms
+    g.ax_col_dendrogram.set_visible(False)
+    g.ax_row_dendrogram.set_ylim([0,0.00001])
+    g.ax_row_dendrogram.set_xlim([0,0.00001])
+    #make legend for classes
+    for label in sorted(set(labels)):
+        g.ax_row_dendrogram.bar(0,0,color=lut[label], label=label,linewidth=0)
+    g.ax_row_dendrogram.legend(loc="center left",fontsize='small',\
+        title='BGC classes')
+    #move colourbar
+    g.cax.set_position([.35, .78, .45, .0225])
+    plt.savefig(\
+        os.path.join(outfolder, 'topic_heatmap_{}.pdf'.format(metric)))
+    plt.close()
+
+def read2dict(filepath, sep=','):
+    '''Read file into a dict {first_column:[other_columns]}
+
+    filepath: str
+    sep: str, delimiter in the file
+    '''
+    output = {}
+    with open(filepath,'r') as inf:
+        for line in inf:
+            line = line.strip().split(sep)
+            output[line[0]] = line[1:]
+    return output
 
 if __name__ == '__main__':
     start = time.time()
@@ -366,11 +426,7 @@ if __name__ == '__main__':
 
     cmd = get_commands()
     print('\nStart')
-    with open(cmd.bgcfile, 'r') as inf:
-        bgcs = {}
-        for line in inf:
-            line = line.strip().split(',')
-            bgcs[line[0]] = line[1:]
+    bgcs = read2dict(cmd.bgcfile)
     with open(cmd.modfile, 'r') as inf:
         modules = {}
         #{modules:[info]}
@@ -378,8 +434,13 @@ if __name__ == '__main__':
             line = line.strip().split('\t')
             mod = tuple(line[-1].split(',')) #now a tuple of str
             modules[mod] = line[:-1]
+    if cmd.classes:
+        bgc_classes_dict = read2dict(cmd.classes, sep='\t')
+    else:
+        bgc_classes_dict = False
     if not os.path.isdir(cmd.out_folder):
         subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
+
     bgcs = remove_infr_doms_str(bgcs, 0, False)
     if cmd.amplify:
         bgc_items = []
@@ -392,9 +453,9 @@ if __name__ == '__main__':
     lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
         num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
         ldavis=cmd.visualise)
-    process_lda(lda, lda_dict, bow_corpus, modules, cmd.min_feat_score, \
-        bgclist, cmd.out_folder, amplif=cmd.amplify, bgc_classes=\
-        bgc_classes_dict)
+    process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num,
+        cmd.min_feat_score, bgclist, cmd.out_folder, amplif=cmd.amplify, \
+        bgc_classes=bgc_classes_dict)
 
     end = time.time()
     t = end-start
