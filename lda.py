@@ -9,13 +9,13 @@ from functools import partial
 import matplotlib
 matplotlib.use('Agg') #to not rely on X-forwarding (not available in screen)
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.axes_divider import make_axes_locatable
-from mpl_toolkits.axes_grid1.colorbar import colorbar
 from multiprocessing import Pool, cpu_count
 from numpy import sqrt
+import numpy as np
 from operator import itemgetter
 import os
 import pandas as pd
+import scipy.cluster.hierarchy as sch
 import seaborn as sns
 from statistics import mean,median
 import subprocess
@@ -135,9 +135,9 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
         pyLDAvis.save_html(vis, visname)
     return lda, dict_lda, corpus_bow
 
-def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, min_f_score,
-    bgcs, outfolder, amplif=False, min_t_match=0.1, min_feat_match=0.3, \
-    bgc_classes=False):
+def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
+    min_f_score, bgcs, outfolder, amplif=False, min_t_match=0.1, \
+    min_feat_match=0.3, bgc_classes=False):
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
@@ -183,8 +183,10 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, min_f_score,
             outf.write('{}\t{}\t{}\t{}\n'.format(top,trans[top],\
                 ','.join(doms),','.join(map(str,nums))))
     # print(select_features, mean(select_features))
+    bgcl_dict = {bgc: sum(1 for g in genes if not g == '-') \
+        for bgc,genes in bgc_dict.items()}
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
-        plot=True, amplif=amplif)
+        bgcl_dict, plot=True, amplif=amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
     t_matches = retrieve_topic_matches(bgc2topic)
     top_match_f = os.path.join(outfolder,'matches_per_topic.txt')
@@ -198,11 +200,13 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, min_f_score,
         metric='euclidean')
     bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
         metric='correlation')
+    bgc_class_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
+        metric='correlation')
 
 
-def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
-    amplif=False):
-    '''Returns dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
+def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
+    plot=True, amplif=False):
+    '''Returns dict of {bgc:{topic_num:[prob,[(gene,prob)]]}}
     
     
     Writes file to outfolder/bgc_topics.txt and supplies plots if plot=True
@@ -229,7 +233,7 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
                     #each t is a tuple of (topic, probability)
                     topd[t[0]][1].append((name,t[1]))
             outf.write('>{}\n'.format(bgc))
-            outf.write('len={}\n'.format(len(doc_doms[1])))
+            outf.write('len={}\n'.format(bgcl_dict[bgc]))
             for top, info in sorted(topd.items(),key=lambda x: x[1][0],\
                 reverse=True):
                 s_genes = sorted(info[1],key=lambda x: x[1],reverse=True)
@@ -238,45 +242,64 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
                 string='topic={}\n\tp={}\n\tlen={}\n\tgenes={}\n'.format(\
                     top,info[0], len(info[1]), genes)
                 outf.write(string)
-            topd['len'] = len(doc_doms[1])
             bgc2topic[bgc] = topd
     if plot:
         print('Plotting')
         #extract length of each bgc vs len of topic in each bgc
-        lengths = ((val['len'],len(val[t][1])) for val in\
-            bgc2topic.values() for t in val if not t == 'len')
-        len_counts = Counter(lengths)
-        x_y, counts = zip(*len_counts.items())
-        bgc_len, topic_len = zip(*x_y)
-        m_counts = max(len_counts.values())
-        fig, ax = plt.subplots()
-        scatter = ax.scatter(bgc_len, topic_len, c=sqrt(counts), s=2.5,vmin=1,\
-            vmax=sqrt(m_counts), cmap='hot')
-        leg_range = [1]+[round(x,-1) for x in \
-            range(20,m_counts,int(m_counts/4))]
-        if len(leg_range) == 4:
-            leg_range.append(round(m_counts,-1))
-        kw = dict(num=leg_range,func=lambda c: c**2)
-        legend = ax.legend(*scatter.legend_elements(**kw), loc='upper left',\
-            title='Occurrence')
-        ax.add_artist(legend)
-        plt.xlabel('Length BGC')
-        plt.ylabel('Length topic match')
-        plt.title('Length of a BGC vs length of matching topic')
-        plt.savefig(os.path.join(outfolder,'len_bgcs_vs_len_topic_match.pdf'))
+        lengths = ((bgcl_dict[bgc],len(val[t][1])) for bgc,val in\
+            bgc2topic.items() for t in val)
+        len_name = os.path.join(outfolder,'len_bgcs_vs_len_topic_match.pdf')
+        plot_topic_matches_lengths(lengths, len_name)
 
         #count amount of topics per bgc
-        topics_per_bgc = Counter([len(vals)-1 for vals in bgc2topic.values()])
-        xs = range(max(topics_per_bgc)+1)
-        h = [topics_per_bgc[x] if x in topics_per_bgc else 0 for x in xs]
-        plt.close()
-        plt.bar(xs, h)
-        plt.xlabel('Number of topics per BGC')
-        plt.ylabel('Occurence')
-        plt.title('Topics per BGC')
-        plt.savefig(os.path.join(outfolder,'topics_per_bgc.pdf'))
-        plt.close()
+        tpb_name = os.path.join(outfolder,'topics_per_bgc.pdf')
+        topics_per_bgc = Counter([len(vals) for vals in bgc2topic.values()])
+        plot_topics_per_bgc(topics_per_bgc,tpb_name)
     return bgc2topic
+
+def plot_topic_matches_lengths(lengths, outname):
+    '''
+    Make a scatterplot of the lengths of the topic matches vs the bgc lengths
+
+    lengths: list of tuples, [(bgc_len,match_len)]
+    outname: str, filepath
+    '''
+    len_counts = Counter(lengths)
+    x_y, counts = zip(*len_counts.items())
+    bgc_len, topic_len = zip(*x_y)
+    m_counts = max(len_counts.values())
+    fig, ax = plt.subplots()
+    scatter = ax.scatter(bgc_len, topic_len, c=sqrt(counts), s=2.5,vmin=1,\
+        vmax=sqrt(m_counts), cmap='hot')
+    leg_range = [1]+[round(x,-1) for x in \
+        range(20,m_counts,int(m_counts/4))]
+    if len(leg_range) == 4:
+        leg_range.append(round(m_counts,-1))
+    kw = dict(num=leg_range,func=lambda c: c**2)
+    legend = ax.legend(*scatter.legend_elements(**kw), loc='upper left',\
+        title='Occurrence')
+    ax.add_artist(legend)
+    plt.xlabel('Length BGC')
+    plt.ylabel('Length topic match')
+    plt.title('Length of a BGC vs length of matching topic')
+    plt.savefig(outname)
+    plt.close()
+
+def plot_topics_per_bgc(topics_per_bgc, outname):
+    '''Make a barplot of the amount of topics per bgc
+
+    topics_per_bgc: dict/counter object, {n:bgcs_with_n_topics}
+    outname: str
+    '''
+    xs = range(max(topics_per_bgc)+1)
+    h = [topics_per_bgc[x] if x in topics_per_bgc else 0 for x in xs]
+    plt.close()
+    plt.bar(xs, h)
+    plt.xlabel('Number of topics per BGC')
+    plt.ylabel('Occurence')
+    plt.title('Topics per BGC')
+    plt.savefig(outname)
+    plt.close()
 
 def link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder):
     '''
@@ -389,20 +412,21 @@ def bgc_topic_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
     class_set = set(bgc_classes.keys())
     labels = [bgc_classes[bgc][0] if bgc in class_set else 'None' for bgc \
         in bgcs]
+    s_labels = sorted(set(labels))
     #get colours
-    s_labels = set(labels+['None']) #make sure None is in there
-    s_labels.remove("None")
+    if 'None' in s_labels:
+        s_labels.remove("None")
     if len(s_labels) > 10:
-        lut = dict(zip(sorted(s_labels), sns.cubehelix_palette(len(\
+        lut = dict(zip(s_labels, sns.cubehelix_palette(len(\
             s_labels),start=1.2,rot=2,dark=0.11,light=0.85)))
     else:
-        lut = dict(zip(sorted(s_labels), sns.color_palette()))
+        lut = dict(zip(s_labels, sns.color_palette()))
     lut['None'] = 'w' #make None always white
-    s_labels = ['None']+sorted(s_labels)
-
+    s_labels = ['None']+s_labels
     row_labs = pd.DataFrame(labels,index=bgcs,columns=['BGC classes'])
     row_colours = row_labs['BGC classes'].map(lut) #map colour to a label
-    g = sns.clustermap(df, cmap = 'Spectral', row_colors = row_colours, \
+
+    g = sns.clustermap(df, cmap = 'nipy_spectral', row_colors = row_colours, \
         linewidths = 0, metric=metric, yticklabels=False, xticklabels=True, \
         cbar_kws = {'orientation':'horizontal'},vmin=0,vmax=1)
     g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xmajorticklabels(),\
@@ -423,7 +447,7 @@ def bgc_topic_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
     plt.close()
 
 def bgc_class_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
-    metric='euclidean'):
+    metric='correlation'):
     '''Make a clustered heatmap of bgcs and topics, and optional bgc_classes
 
     bgc_with_topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
@@ -441,22 +465,26 @@ def bgc_class_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
     class_set = set(bgc_classes.keys())
     labels = [bgc_classes[bgc][0] if bgc in class_set else 'None' for bgc \
         in bgcs]
+    s_labels = sorted(set(labels))
+    #cluster each class (hierarchical, correlation)
+    class_i = clust_class_bgcs(df, labels, s_labels)
     #get colours
-    s_labels = set(labels+['None']) #make sure None is in there
-    s_labels.remove("None")
+    if 'None' in s_labels:
+        s_labels.remove("None")
     if len(s_labels) > 10:
-        lut = dict(zip(sorted(s_labels), sns.cubehelix_palette(len(\
+        lut = dict(zip(s_labels, sns.cubehelix_palette(len(\
             s_labels),start=1.2,rot=2,dark=0.11,light=0.85)))
     else:
-        lut = dict(zip(sorted(s_labels), sns.color_palette()))
+        lut = dict(zip(s_labels, sns.color_palette()))
     lut['None'] = 'w' #make None always white
-    s_labels = ['None']+sorted(s_labels)
-
+    s_labels = ['None']+s_labels
     row_labs = pd.DataFrame(labels,index=bgcs,columns=['BGC classes'])
-    row_colours = row_labs['BGC classes'].map(lut) #map colour to a label
-    g = sns.clustermap(df, cmap = 'Blues', row_colors = row_colours, \
-        linewidths = 0, metric=metric, yticklabels=False, xticklabels=True, \
-        cbar_kws = {'orientation':'horizontal'},vmin=0,vmax=1)
+    row_colours = row_labs.iloc[class_i,0].map(lut) #map colour to a label
+
+    g = sns.clustermap(df.iloc[class_i,:], cmap = 'nipy_spectral', \
+        row_colors = row_colours, linewidths = 0, metric=metric, \
+        yticklabels=False, xticklabels=True, cbar_kws = \
+        {'orientation':'horizontal'},vmin=0,vmax=1, row_cluster=False)
     g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xmajorticklabels(),\
         fontsize = 5)
     #don't show dendrograms
@@ -471,8 +499,21 @@ def bgc_class_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
     #move colourbar
     g.cax.set_position([.35, .78, .45, .0225])
     plt.savefig(\
-        os.path.join(outfolder, 'topic_heatmap_{}.pdf'.format(metric)))
+        os.path.join(outfolder, 'class-topic_heatmap_{}.pdf'.format(metric)))
     plt.close()
+
+def clust_class_bgcs(df, labels, s_labels):
+    '''Returns a list of indeces ordered on clustered classes
+    '''
+    #get a list of clustered indexes for all and then add them
+    inds = np.array([],dtype='int32')
+    for bgc_class in s_labels:
+        c_i = [i for i,cls in enumerate(labels) if cls == bgc_class]
+        dist = sch.distance.pdist(df.iloc[c_i,:], metric = 'correlation')
+        clust = sch.linkage(dist, metric='correlation')
+        ind = sch.leaves_list(clust)
+        inds = np.append(inds,ind)
+    return inds
 
 def read2dict(filepath, sep=','):
     '''Read file into a dict {first_column:[other_columns]}
@@ -520,7 +561,7 @@ if __name__ == '__main__':
     lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
         num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
         ldavis=cmd.visualise)
-    process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num,
+    process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num, bgcs,
         cmd.min_feat_score, bgclist, cmd.out_folder, amplif=cmd.amplify, \
         bgc_classes=bgc_classes_dict)
 
