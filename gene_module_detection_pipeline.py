@@ -215,7 +215,14 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
                                     "contig edge"))
                             return
             if feature.type == 'CDS':
-                header = ">{}_{}".format(name, num_genes+1)
+                gene_id = ""
+                if "gene" in CDS.qualifiers:
+                    gene_id = CDS.qualifiers.get('gene',"")[0]
+                protein_id = ""
+                if "protein_id" in CDS.qualifiers:
+                    protein_id = CDS.qualifiers.get('protein_id',"")[0]
+                head = '_'.join(name,gene_id,protein_id)
+                header = ">{}_{}".format(head, num_genes+1)
                 seqs[header] = feature.qualifiers['translation'][0]
                 if seqs[header] == '':
                     print('  {} does not have a translation'.format(header))
@@ -310,11 +317,12 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
         len(files)))
     return out_folder, domtabs_in_existing_folder
 
-def parse_domtab(domfile, clus_file, min_overlap, verbose):
+def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
     '''Parses domtab into a cluster domain file (csv)
 
     domfile: string, file path
     clus_file: open file for writing
+    sum_file: open file for writing
     min_overlap : float, the amount of overlap two domains must have for it
         to be considered overlap
 
@@ -403,11 +411,12 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
         domtables = iglob(os.path.join(in_folder, '*.domtable'))
     in_name = os.path.split(in_folder)[1].split('_domtables')[0]
     out_file = os.path.join(out_folder, in_name+'_clusterfile.csv')
+    sumfile = os.path.join(out_folder, in_name+'_dom_hits.txt')
     stat_file = os.path.join(out_folder, in_name+'_domstats.txt')
     domc = Counter()
-    with open(out_file, 'w') as out:
+    with open(out_file, 'w') as out, open(sumfile,'w') as sumf:
         for domtable in domtables:
-            doms = parse_domtab(domtable, out, cutoff, verbose)
+            doms = parse_domtab(domtable, out, sumf, cutoff, verbose)
             domc.update(doms)
     with open(stat_file, 'w') as stat:
         stat.write("#Total\t{}\n".format(sum(domc.values())))
