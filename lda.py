@@ -193,7 +193,7 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, min_f_score,
         min_feat_match)
     top_match_f_filt = top_match_f.split('.txt')[0]+'_filtered.txt'
     write_topic_matches(t_matches, top_match_f_filt)
-    bgc_with_topics = retrieve_match_per_bgc(t_matches)
+    bgc_with_topics = retrieve_match_per_bgc(t_matches, outfolder)
     bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
         metric='euclidean')
     bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
@@ -211,7 +211,6 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, plot=True, \
     doc_lda = lda[corpus_bow]
     doc_topics = os.path.join(outfolder, 'bgc_topics.txt')
     bgc2topic = {}
-    #filter the zip(bgcs,doc_lda) here
     if amplif:
         get_index = set(range(0,len(bgcs),amplif))
         bgc_docs = [(bgcs[i],doc_lda[i]) for i in get_index]
@@ -303,11 +302,11 @@ def retrieve_topic_matches(bgc2topic):
     for bgc,dc in bgc2topic.items():
         for k,v in dc.items():
             if not k == 'len':
-                v.append(bgc)
-                topic_matches[k].append(v)
+                newv = v+[bgc]
+                topic_matches[k].append(newv)
     return topic_matches
 
-def retrieve_match_per_bgc(topic_matches):
+def retrieve_match_per_bgc(topic_matches,outfolder):
     '''Turns topics with matches back into bgc with matches
 
     topic_matches: {topic:[[prob,(gene,prob),bgc]]}
@@ -317,6 +316,12 @@ def retrieve_match_per_bgc(topic_matches):
     for topic,info in topic_matches.items():
         for match in info:
             bgc2topic[match[2]].append([topic]+match[:2])
+    with open(os.path.join(outfolder, 'bgc_topics_filtered.txt'),'w') as outf:
+        for bgc,info in sorted(bgc2topic.items()):
+            outf.write('>{}\n'.format(bgc))
+            for match in sorted(info, key=lambda x: x[1],reverse=True):
+                outf.write('{}\t{}\t{}\n'.format(match[0],match[1],\
+                ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
     return bgc2topic
 
 def write_topic_matches(topic_matches, outname):
@@ -328,16 +333,16 @@ def write_topic_matches(topic_matches, outname):
     #occurence of each topic
     prevl = {t:len(vals) for t,vals in topic_matches.items()}
     with open(outname,'w') as outf:
-        for topic, matches in sorted(topic_matches.items(), \
-            key=lambda x: x[0]):
+        for topic, matches in sorted(topic_matches.items()):
             outf.write('#Topic {}, {} matches\n'.format(topic,prevl[topic]))
             #sort the matches by length and then by alphabet
-            sorted_matches = sorted(matches,key=lambda x: \
-                (len(x[1]),list(zip(*x[1]))[0]))
-            topic_matches[topic] = sorted_matches
-            for match in sorted_matches:
-                outf.write('{:.3f}\t{}\n'.format(match[0], ','.join(\
-                ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]])))
+            if matches:
+                sorted_matches = sorted(matches,key=lambda x: \
+                    (len(x[1]),list(zip(*x[1]))[0]))
+                topic_matches[topic] = sorted_matches
+                for match in sorted_matches:
+                    outf.write('{:.3f}\t{}\n'.format(match[0], ','.join(\
+                    ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]])))
     return topic_matches
 
 def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
@@ -349,9 +354,9 @@ def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
     min_feat_match: float, minimal score of a feature matching in a topic in
         a bgc
     '''
-    filt_topic_matches = {}
+    filt_topic_matches = defaultdict(list)
     for topic, matches in topic_matches.items():
-        filt_topic_matches[topic] = []
+        # filt_topic_matches[topic] = []
         use_feats = topic_features[topic]
         for match in matches:
             match_p = match[0]
@@ -381,23 +386,85 @@ def bgc_topic_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
     df = pd.DataFrame(data,index=bgcs,columns=list(range(topic_num)))
     df = df.fillna(0)
     #colour rows by bgc class
-    labels = [bgc_classes[bgc][0] if bgc in bgc_classes else 'None' for bgc \
+    class_set = set(bgc_classes.keys())
+    labels = [bgc_classes[bgc][0] if bgc in class_set else 'None' for bgc \
         in bgcs]
     #get colours
-    lut = dict(zip(sorted(set(labels)), sns.hls_palette(len(set(labels)))))
-    if 'None' in lut:
-        lut['None'] = 'w' #make None always white
+    s_labels = set(labels+['None']) #make sure None is in there
+    s_labels.remove("None")
+    if len(s_labels) > 10:
+        lut = dict(zip(sorted(s_labels), sns.cubehelix_palette(len(\
+            s_labels),start=1.2,rot=2,dark=0.11,light=0.85)))
+    else:
+        lut = dict(zip(sorted(s_labels), sns.color_palette()))
+    lut['None'] = 'w' #make None always white
+    s_labels = ['None']+sorted(s_labels)
+
     row_labs = pd.DataFrame(labels,index=bgcs,columns=['BGC classes'])
     row_colours = row_labs['BGC classes'].map(lut) #map colour to a label
-    g = sns.clustermap(df, cmap = 'Blues', row_colors = row_colours, \
-        linewidths = 0, metric=metric, yticklabels=False, xticklabels=False, \
+    g = sns.clustermap(df, cmap = 'Spectral', row_colors = row_colours, \
+        linewidths = 0, metric=metric, yticklabels=False, xticklabels=True, \
         cbar_kws = {'orientation':'horizontal'},vmin=0,vmax=1)
+    g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xmajorticklabels(),\
+        fontsize = 5)
     #don't show dendrograms
     g.ax_col_dendrogram.set_visible(False)
     g.ax_row_dendrogram.set_ylim([0,0.00001])
     g.ax_row_dendrogram.set_xlim([0,0.00001])
     #make legend for classes
-    for label in sorted(set(labels)):
+    for label in s_labels:
+        g.ax_row_dendrogram.bar(0,0,color=lut[label], label=label,linewidth=0)
+    g.ax_row_dendrogram.legend(loc="center left",fontsize='small',\
+        title='BGC classes')
+    #move colourbar
+    g.cax.set_position([.35, .78, .45, .0225])
+    plt.savefig(\
+        os.path.join(outfolder, 'topic_heatmap_{}.pdf'.format(metric)))
+    plt.close()
+
+def bgc_class_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
+    metric='euclidean'):
+    '''Make a clustered heatmap of bgcs and topics, and optional bgc_classes
+
+    bgc_with_topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
+    bgc_classes: dict of {bgc:[[class1,class2]]}
+    topic_num: int, number of topics in the model
+    
+    '''
+    print('\nMaking clustered heatmap of classes, metric: {}'.format(metric))
+    #make pd dataframe from bgc with topic with prob as value for present tpic
+    bgcs, topics = zip(*bgc_with_topic.items())
+    data = [{v[0]:v[1] for v in val} for val in topics]
+    df = pd.DataFrame(data,index=bgcs,columns=list(range(topic_num)))
+    df = df.fillna(0)
+    #colour rows by bgc class
+    class_set = set(bgc_classes.keys())
+    labels = [bgc_classes[bgc][0] if bgc in class_set else 'None' for bgc \
+        in bgcs]
+    #get colours
+    s_labels = set(labels+['None']) #make sure None is in there
+    s_labels.remove("None")
+    if len(s_labels) > 10:
+        lut = dict(zip(sorted(s_labels), sns.cubehelix_palette(len(\
+            s_labels),start=1.2,rot=2,dark=0.11,light=0.85)))
+    else:
+        lut = dict(zip(sorted(s_labels), sns.color_palette()))
+    lut['None'] = 'w' #make None always white
+    s_labels = ['None']+sorted(s_labels)
+
+    row_labs = pd.DataFrame(labels,index=bgcs,columns=['BGC classes'])
+    row_colours = row_labs['BGC classes'].map(lut) #map colour to a label
+    g = sns.clustermap(df, cmap = 'Blues', row_colors = row_colours, \
+        linewidths = 0, metric=metric, yticklabels=False, xticklabels=True, \
+        cbar_kws = {'orientation':'horizontal'},vmin=0,vmax=1)
+    g.ax_heatmap.set_xticklabels(g.ax_heatmap.get_xmajorticklabels(),\
+        fontsize = 5)
+    #don't show dendrograms
+    g.ax_col_dendrogram.set_visible(False)
+    g.ax_row_dendrogram.set_ylim([0,0.00001])
+    g.ax_row_dendrogram.set_xlim([0,0.00001])
+    #make legend for classes
+    for label in s_labels:
         g.ax_row_dendrogram.bar(0,0,color=lut[label], label=label,linewidth=0)
     g.ax_row_dendrogram.legend(loc="center left",fontsize='small',\
         title='BGC classes')
