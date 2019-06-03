@@ -351,7 +351,7 @@ def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
     for query in queries:
         dom_matches = []
         q_id = query.id
-        bgc,q_id = q_id.split('_g_id') #make sure that bgcs with _ in name do not
+        bgc,q_id = q_id.split('_gid') #make sure that bgcs with _ in name do not
         q_id = q_id.split('_')
         cds_num, total_genes = map(int,q_id[-1].split('/'))
         sum_info = [q.split(':')[-1] for q in q_id[:-1]]
