@@ -215,14 +215,24 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
                                     "contig edge"))
                             return
             if feature.type == 'CDS':
-                gene_id = ""
-                if "gene" in CDS.qualifiers:
-                    gene_id = CDS.qualifiers.get('gene',"")[0]
-                protein_id = ""
-                if "protein_id" in CDS.qualifiers:
-                    protein_id = CDS.qualifiers.get('protein_id',"")[0]
-                head = '_'.join(name,gene_id,protein_id)
+                gene_id = "gid:"
+                if "gene" in feature.qualifiers:
+                    gene_id += feature.qualifiers.get('gene',"")[0]
+                protein_id = "pid:"
+                if "protein_id" in feature.qualifiers:
+                    protein_id += feature.qualifiers.get('protein_id',"")[0]
+                start = feature.location.start
+                end = feature.location.end
+                strand = feature.location.strand
+                if strand == 1:
+                    strand = '+'
+                else:
+                    strand = '-'
+                loc = 'loc:{};{};{}'.format(start,end,strand)
+                head = '_'.join([name,gene_id,protein_id,loc])
+                head = head.replace(">","") #end might contain this
                 header = ">{}_{}".format(head, num_genes+1)
+                header = header.replace(' ','') #hmmscan uses space as delim
                 seqs[header] = feature.qualifiers['translation'][0]
                 if seqs[header] == '':
                     print('  {} does not have a translation'.format(header))
@@ -340,7 +350,11 @@ def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
     #for every cds that has a hit
     for query in queries:
         dom_matches = []
-        cds_num, total_genes = map(int,query.id.split('_')[-1].split('/'))
+        q_id = query.id
+        bgc,q_id = q_id.split('_g_id') #make sure that bgcs with _ in name do not
+        q_id = q_id.split('_')
+        cds_num, total_genes = map(int,q_id[-1].split('/'))
+        sum_info = [q.split(':')[-1] for q in q_id[:-1]]
         #for every hit in each cds
         for hit in query:
             match = hit[0]
@@ -360,8 +374,14 @@ def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
                             dels.append(j)
                         else:
                             dels.append(i)
-        cds_doms = tuple(dom_matches[i][0] for i in range(len(query)) \
-            if i not in dels)
+        cds_matches = [dom_matches[i] for i in range(len(query)) \
+            if i not in dels]
+        #bgc g_id p_id loc orf_num tot_orf dom range bitscore
+        for match in cds_matches:
+            sum_file.write('{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(bgc, \
+                '\t'.join(sum_info), cds_num, total_genes, match[0], \
+                ';'.join(map(str,match[1])),match[2]))
+        cds_doms = tuple(dom_m[0] for dom_m in cds_matches)
         #if a cds has no domains print '-' in output
         gene_gap = cds_num - cds_before -1
         if gene_gap > 0:
@@ -415,6 +435,10 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
     stat_file = os.path.join(out_folder, in_name+'_domstats.txt')
     domc = Counter()
     with open(out_file, 'w') as out, open(sumfile,'w') as sumf:
+        #bgc g_id p_id loc orf_num tot_orf dom range bitscore
+        header = ['bgc','g_id','p_id','location','orf_num','tot_orf',\
+            'domain','q_range','bitscore']
+        sumf.write('{}\n'.format('\t'.join(header)))
         for domtable in domtables:
             doms = parse_domtab(domtable, out, sumf, cutoff, verbose)
             domc.update(doms)
