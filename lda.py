@@ -361,7 +361,7 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder):
                         outf.write('known_sub-cluster={}\n'.format(', '.join(\
                             subcl)))
             for match in sorted(info, key=lambda x: x[1],reverse=True):
-                outf.write('{}\t{}\t{}\n'.format(match[0],match[1],\
+                outf.write('{}\t{:.3f}\t{}\n'.format(match[0],match[1],\
                 ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
     return bgc2topic
 
@@ -597,7 +597,11 @@ if __name__ == '__main__':
         bgclist, domlist = zip(*bgcs.items())
 
     if cmd.known_subclusters:
-        known_subclusters = read2dict(cmd.known_subclusters,sep='\t')
+        known_subclusters = defaultdict(list)
+        with open(cmd.known_subclusters,'r') as inf:
+            for line in inf:
+                line = line.strip().split('\t')
+                known_subclusters[line[0]].append(line[1:])
     else:
         known_subclusters = False
 
