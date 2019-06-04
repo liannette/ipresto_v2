@@ -218,9 +218,11 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
                 gene_id = "gid:"
                 if "gene" in feature.qualifiers:
                     gene_id += feature.qualifiers.get('gene',"")[0]
+                    gene_id = gene_id.replace('_','-')
                 protein_id = "pid:"
                 if "protein_id" in feature.qualifiers:
                     protein_id += feature.qualifiers.get('protein_id',"")[0]
+                    protein_id = protein_id.replace('_','-')
                 start = feature.location.start
                 end = feature.location.end
                 strand = feature.location.strand
