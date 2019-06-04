@@ -512,7 +512,9 @@ def clust_class_bgcs(df, labels, s_labels):
         dist = sch.distance.pdist(df.iloc[c_i,:], metric = 'correlation')
         clust = sch.linkage(dist, metric='correlation')
         ind = sch.leaves_list(clust)
-        inds = np.append(inds,ind)
+        # print(ind)
+        ind_reorder = [c_i[i] for i in ind]
+        inds = np.append(inds,ind_reorder)
     return inds
 
 def read2dict(filepath, sep=','):
