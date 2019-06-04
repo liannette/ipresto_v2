@@ -65,6 +65,14 @@ def get_commands():
     parser.add_argument("--classes", help="A file containing classes of the \
         BGCs used in the analysis. First column should contain matching BGC\
         names. Consecutive columns should contain classes.", default=False)
+    parser.add_argument("--plot", help="If provided: make plots about \
+        several aspects of the output. Default is off.", default=False, \
+        action="store_true")
+    parser.add_argument("--known_subclusters", help="A tab delimited file \
+    with known subclusters. Should contain subclusters in the last column and\
+    BGC identifiers in the first column. Subclusters are comma separated\
+    genes represented as domains. Multiple domains in a gene are separated by\
+    semi-colon.")
     return parser.parse_args()
 
 def remove_infr_doms_str(clusdict, m_gens, verbose):
@@ -136,8 +144,8 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     return lda, dict_lda, corpus_bow
 
 def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
-    min_f_score, bgcs, outfolder, amplif=False, min_t_match=0.1, \
-    min_feat_match=0.3, bgc_classes=False):
+    min_f_score, bgcs, outfolder, bgc_classes, amplif=False, min_t_match=0.1,\
+    min_feat_match=0.3, plot=True, known_subcl=False):
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
@@ -186,22 +194,24 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     bgcl_dict = {bgc: sum(1 for g in genes if not g == '-') \
         for bgc,genes in bgc_dict.items()}
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
-        bgcl_dict, plot=True, amplif=amplif)
+        bgcl_dict, plot=plot, amplif=amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
     t_matches = retrieve_topic_matches(bgc2topic)
     top_match_f = os.path.join(outfolder,'matches_per_topic.txt')
-    t_matches = write_topic_matches(t_matches, top_match_f)
+    t_matches = write_topic_matches(t_matches, bgc_classes, top_match_f)
     t_matches = filter_matches(t_matches, filt_features, min_t_match, \
         min_feat_match)
     top_match_f_filt = top_match_f.split('.txt')[0]+'_filtered.txt'
-    write_topic_matches(t_matches, top_match_f_filt)
-    bgc_with_topics = retrieve_match_per_bgc(t_matches, outfolder)
-    bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
-        metric='euclidean')
-    bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
-        metric='correlation')
-    bgc_class_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
-        metric='correlation')
+    write_topic_matches(t_matches, bgc_classes, top_match_f_filt)
+    bgc_with_topics = retrieve_match_per_bgc(t_matches, bgc_classes, \
+        known_subcl,outfolder)
+    if plot:
+        bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
+            metric='euclidean')
+        bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
+            metric='correlation')
+        bgc_class_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
+            metric='correlation')
 
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
@@ -329,10 +339,12 @@ def retrieve_topic_matches(bgc2topic):
                 topic_matches[k].append(newv)
     return topic_matches
 
-def retrieve_match_per_bgc(topic_matches,outfolder):
+def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder):
     '''Turns topics with matches back into bgc with matches
 
     topic_matches: {topic:[[prob,(gene,prob),bgc]]}
+    bgc_classes: {bgc:[class1,class2]}
+    known_subcl: {bgc: [[info,about,subcl]]}
     bgc2topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
     '''
     bgc2topic = defaultdict(list)
@@ -341,31 +353,54 @@ def retrieve_match_per_bgc(topic_matches,outfolder):
             bgc2topic[match[2]].append([topic]+match[:2])
     with open(os.path.join(outfolder, 'bgc_topics_filtered.txt'),'w') as outf:
         for bgc,info in sorted(bgc2topic.items()):
-            outf.write('>{}\n'.format(bgc))
+            outf.write('>{}\nclass={}\n'.format(bgc,\
+                bgc_classes.get(bgc,['None'])[0]))
+            if known_subcl:
+                if bgc in known_subcl:
+                    for i,subcl in enumerate(known_subcl[bgc]):
+                        outf.write('known_sub-cluster={}\n'.format(', '.join(\
+                            subcl)))
             for match in sorted(info, key=lambda x: x[1],reverse=True):
                 outf.write('{}\t{}\t{}\n'.format(match[0],match[1],\
                 ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
     return bgc2topic
 
-def write_topic_matches(topic_matches, outname):
+def write_topic_matches(topic_matches, bgc_classes, outname):
     '''Writes topic matches to a file sorted on length and alphabet
 
-    topic_matches: {topic:[[prob,(gene,prob)]]}
+    topic_matches: {topic:[[prob,(gene,prob),bgc]]}
+    bgc_classes: {bgc: [class1,class2]}
     outname: str, filepath
     '''
+    plotlines = []
+    s_b_c = set(bgc_classes)
     #occurence of each topic
     prevl = {t:len(vals) for t,vals in topic_matches.items()}
-    with open(outname,'w') as outf:
+    sumfile = outname.split('.txt')[0]+'_summary.txt'
+    with open(outname,'w') as outf, open(sumfile,'w') as sumf:
+        sumf.write('Topic\tmatches\tmatches_len>1\tclasses\n')
         for topic, matches in sorted(topic_matches.items()):
-            outf.write('#Topic {}, {} matches\n'.format(topic,prevl[topic]))
+            classes = Counter([bgc_classes.get(bgc,['None'])[0] for bgc in \
+                list(zip(*matches))[2]])
+            class_str = ','.join([':'.join(map(str,cls)) for cls in \
+                sorted(classes.items())])
+            prevl = len(matches)
+            prevl_bigger_1 = len([m for m in matches if len(m[1]) > 1])
+            #topicnr #matches #matches>1 classes
+            outf.write('#Topic {}, matches:{}, matches_len>1:{}, '+
+                'classes:{}\n'.format(topic,prevl,prevl_bigger_1, class_str))
+            sum_line = [topic, prevl, prevl_bigger_1, class_str]
+            plotlines.append(sum_line)
+            sumf.write('{}\n'.format('\t'.join(map(str,sum_line))))
             #sort the matches by length and then by alphabet
             if matches:
                 sorted_matches = sorted(matches,key=lambda x: \
                     (len(x[1]),list(zip(*x[1]))[0]))
                 topic_matches[topic] = sorted_matches
                 for match in sorted_matches:
-                    outf.write('{:.3f}\t{}\n'.format(match[0], ','.join(\
-                    ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]])))
+                    outf.write('{:.3f}\t{}\t{}\t{}\n'.format(match[0], ','.join(\
+                    ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]]),\
+                    match[2],bgc_classes.get(match[2],['None'])[0]))
     return topic_matches
 
 def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
@@ -534,8 +569,8 @@ if __name__ == '__main__':
     start = time.time()
     #files provided should be filtered bgc csv file and filtered module file
 
-    cmd = get_commands()
     print('\nStart')
+    cmd = get_commands()
     bgcs = read2dict(cmd.bgcfile)
     with open(cmd.modfile, 'r') as inf:
         modules = {}
@@ -547,7 +582,7 @@ if __name__ == '__main__':
     if cmd.classes:
         bgc_classes_dict = read2dict(cmd.classes, sep='\t')
     else:
-        bgc_classes_dict = False
+        bgc_classes_dict = {bgc:'None' for bgc in bgcs}
     if not os.path.isdir(cmd.out_folder):
         subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
 
@@ -560,12 +595,17 @@ if __name__ == '__main__':
     else:
         bgclist, domlist = zip(*bgcs.items())
 
+    if cmd.known_subclusters:
+        known_subclusters = read2dict(cmd.known_subclusters,sep='\t')
+    else:
+        known_subclusters = False
+
     lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
         num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
         ldavis=cmd.visualise)
     process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num, bgcs,
-        cmd.min_feat_score, bgclist, cmd.out_folder, amplif=cmd.amplify, \
-        bgc_classes=bgc_classes_dict)
+        cmd.min_feat_score, bgclist, cmd.out_folder, bgc_classes_dict, \
+        amplif=cmd.amplify, plot=cmd.plot, known_subcl=known_subclusters)
 
     end = time.time()
     t = end-start
