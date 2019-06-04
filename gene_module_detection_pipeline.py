@@ -232,7 +232,8 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
                     strand = '-'
                 loc = 'loc:{};{};{}'.format(start,end,strand)
                 head = '_'.join([name,gene_id,protein_id,loc])
-                head = head.replace(">","") #end might contain this
+                head = head.replace(">","") #loc might contain this
+                head = head.replace("<","")
                 header = ">{}_{}".format(head, num_genes+1)
                 header = header.replace(' ','') #hmmscan uses space as delim
                 seqs[header] = feature.qualifiers['translation'][0]
