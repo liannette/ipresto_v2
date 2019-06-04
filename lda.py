@@ -387,8 +387,9 @@ def write_topic_matches(topic_matches, bgc_classes, outname):
             prevl = len(matches)
             prevl_bigger_1 = len([m for m in matches if len(m[1]) > 1])
             #topicnr #matches #matches>1 classes
-            outf.write('#Topic {}, matches:{}, matches_len>1:{}, '+
-                'classes:{}\n'.format(topic,prevl,prevl_bigger_1, class_str))
+            outf.write(\
+            '#Topic {}, matches:{}, matches_len>1:{}, classes:{}\n'.format(\
+                topic,prevl,prevl_bigger_1, class_str))
             sum_line = [topic, prevl, prevl_bigger_1, class_str]
             plotlines.append(sum_line)
             sumf.write('{}\n'.format('\t'.join(map(str,sum_line))))
