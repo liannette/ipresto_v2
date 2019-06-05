@@ -197,12 +197,12 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
         bgcl_dict, plot=plot, amplif=amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
     t_matches = retrieve_topic_matches(bgc2topic)
-    top_match_f = os.path.join(outfolder,'matches_per_topic.txt')
-    t_matches = write_topic_matches(t_matches, bgc_classes, top_match_f)
+    top_match_file = os.path.join(outfolder,'matches_per_topic.txt')
+    t_matches = write_topic_matches(t_matches, bgc_classes, top_match_file)
     t_matches = filter_matches(t_matches, filt_features, min_t_match, \
         min_feat_match)
-    top_match_f_filt = top_match_f.split('.txt')[0]+'_filtered.txt'
-    write_topic_matches(t_matches, bgc_classes, top_match_f_filt)
+    top_match_file_filt = top_match_file.split('.txt')[0]+'_filtered.txt'
+    write_topic_matches(t_matches, bgc_classes, top_match_file_filt)
     bgc_with_topics = retrieve_match_per_bgc(t_matches, bgc_classes, \
         known_subcl,outfolder)
     if plot:
@@ -340,30 +340,84 @@ def retrieve_topic_matches(bgc2topic):
     return topic_matches
 
 def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder):
-    '''Turns topics with matches back into bgc with matches
+    '''
+    Turns topics with matches back into bgc with matches and writes to file
 
     topic_matches: {topic:[[prob,(gene,prob),bgc]]}
     bgc_classes: {bgc:[class1,class2]}
-    known_subcl: {bgc: [[info,about,subcl]]}
+    known_subcl: {bgc: [[info,domains]]}
     bgc2topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
     '''
+    known_subcl_matches = defaultdict(list)
     bgc2topic = defaultdict(list)
     for topic,info in topic_matches.items():
         for match in info:
             bgc2topic[match[2]].append([topic]+match[:2])
     with open(os.path.join(outfolder, 'bgc_topics_filtered.txt'),'w') as outf:
         for bgc,info in sorted(bgc2topic.items()):
-            outf.write('>{}\nclass={}\n'.format(bgc,\
-                bgc_classes.get(bgc,['None'])[0]))
+            bgc_class = bgc_classes.get(bgc,['None'])[0]
+            outf.write('>{}\nclass={}\n'.format(bgc,bgc_class))
             if known_subcl:
                 if bgc in known_subcl:
+                    #annotate if there are known subclusters in a bgc
                     for i,subcl in enumerate(known_subcl[bgc]):
-                        outf.write('known_sub-cluster={}\n'.format(', '.join(\
+                        outf.write('known_subcluster={}\n'.format(', '.join(\
                             subcl)))
+                #see if matches occur in a known subcluster
+                matches_known = compare_known_subclusters(known_subcl, bgc,\
+                    bgc_class,info)
+                for m_known in matches_known:
+                    known_subcl_matches[m_known[0]].append(m_known[1:])
             for match in sorted(info, key=lambda x: x[1],reverse=True):
                 outf.write('{}\t{:.3f}\t{}\n'.format(match[0],match[1],\
                 ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
+    if known_subcl:
+        subcl_out = os.path.join(outfolder, 'known_subcluster_matches.txt')
+        with open(subcl_out,'w') as outf:
+            #sort the subclusters alphabetically on first info element
+            outf.write('##Values below each subcluster are: %overlap bgc'+
+                ' class topic topic_probability genes:probability\n')
+            for bgc, info in sorted(known_subcl.items(),\
+                key=lambda x: x[1][0][0]):
+                for k_subclust in info:
+                    outf.write('>{}\n'.format('\t'.join(map(str,k_subclust))))
+                    overlap_list = known_subcl_matches[k_subclust[0]]
+                    #give summary per topic
+                    #e.g. #topic x: 12 avg_overlap: 0.403 
+                    #sort from high to low overlap
+                    for m_overlap in sorted(overlap_list, reverse=True):
+                        #overlap bgc class topic prob genes:prob
+                        outf.write('{}\n'.format('\t'.join(\
+                            map(str,m_overlap))))
     return bgc2topic
+
+def compare_known_subclusters(known_subcl, bgc, bgc_class, matches):
+    '''Find % overlap with known subclusters and returns it as a list
+
+    known_subcl: {bgc: [[info,domains]]
+    bgc: str, bgcname
+    bgc_class: str, class of bgc
+    matches: [[topic_num,prob,[(gene,prob)]]]
+    matches_overlap: [[first_info_element,overlap,bgc,bgc_class,topic_num,prob,
+        overlapping_genes,non_overlapping_genes]]
+    '''
+    matches_overlap = []
+    for match in matches:
+        g_list = match[2]
+        doms = set(list(zip(*g_list))[0])
+        for k_subs in known_subcl.values():
+            for k_sub in k_subs:
+                k_sub_doms = set(k_sub[-1].split(','))
+                overl_d_set = doms&k_sub_doms
+                overlap = len(overl_d_set) / len(k_sub_doms)
+                if overlap > 0.4:
+                    overl_d = ','.join(sorted([':'.join(g,str(p)) for g,p in\
+                        g_list if g in overlap_d_set]))
+                    non_overl_d = ','.join(sorted([':'.join(g,str(p)) for g,p in\
+                        g_list if not g in overlap_d_set]))
+                    matches_overlap.append([k_sub[0],round(overlap,3),bgc,\
+                        bgc_class,match[0],match[1],overl_d,non_overl_d])
+    return matches_overlap
 
 def write_topic_matches(topic_matches, bgc_classes, outname):
     '''Writes topic matches to a file sorted on length and alphabet
@@ -372,37 +426,62 @@ def write_topic_matches(topic_matches, bgc_classes, outname):
     bgc_classes: {bgc: [class1,class2]}
     outname: str, filepath
     '''
-    plotlines = []
     s_b_c = set(bgc_classes)
+    s_b_c.add('None')
+    plotlines = pd.DataFrame(columns=sorted(s_b_c))
+    plotlines_1 = pd.DataFrame(columns=sorted(s_b_c))
     #occurence of each topic
     prevl = {t:len(vals) for t,vals in topic_matches.items()}
     sumfile = outname.split('.txt')[0]+'_summary.txt'
     with open(outname,'w') as outf, open(sumfile,'w') as sumf:
         sumf.write('Topic\tmatches\tmatches_len>1\tclasses\n')
         for topic, matches in sorted(topic_matches.items()):
-            classes = Counter([bgc_classes.get(bgc,['None'])[0] for bgc in \
-                list(zip(*matches))[2]])
+            classes = Counter()
+            classes_1 = Counter()
+            for p,g,bgc in matches:
+                bgc_class = bgc_classes.get(bgc,['None'])[0]
+                classes.update([bgc_class])
+                if len(g) > 1:
+                    classes_1.update([bgc_class])
+            for count_class,count in classes.items():
+                plotlines.loc[topic,count_class] = count
+                plotlines_1.loc[topic,count_class] = classes_1[count_class]
             class_str = ','.join([':'.join(map(str,cls)) for cls in \
                 sorted(classes.items())])
             prevl = len(matches)
-            prevl_bigger_1 = len([m for m in matches if len(m[1]) > 1])
+            prevl_bigger_1 = sum(classes_1.values())
             #topicnr #matches #matches>1 classes
             outf.write(\
             '#Topic {}, matches:{}, matches_len>1:{}, classes:{}\n'.format(\
                 topic,prevl,prevl_bigger_1, class_str))
             sum_line = [topic, prevl, prevl_bigger_1, class_str]
-            plotlines.append(sum_line)
             sumf.write('{}\n'.format('\t'.join(map(str,sum_line))))
             #sort the matches by length and then by alphabet
-            if matches:
+            try:
                 sorted_matches = sorted(matches,key=lambda x: \
                     (len(x[1]),list(zip(*x[1]))[0]))
+            except IndexError:
+                pass
+            else:
                 topic_matches[topic] = sorted_matches
                 for match in sorted_matches:
                     outf.write('{:.3f}\t{}\t{}\t{}\n'.format(match[0], ','.join(\
                     ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]]),\
                     match[2],bgc_classes.get(match[2],['None'])[0]))
+    #if plot
+    bplot_name = os.path.split(outname)[0]+'topic_stats.pdf'
+    barplot_topic_stats(plotlines,bplot_name)
+    bplot_name_1 = os.path.split(outname)[0]+'topic_stats_matches>1.pdf'
+    barplot_topic_stats(plotlines_1,bplot_name_1)
     return topic_matches
+
+def barplot_topic_stats(df,outname):
+    '''makes a stacked barplot of the classes in df for each topic
+
+    df: pandas dataframe with index as topic numbers and columns as classes
+    outname: str, filepath
+    '''
+    #make stacked barplots
 
 def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
     '''Filters topic_matches based on cutoffs
