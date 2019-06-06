@@ -379,6 +379,7 @@ def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
                             dels.append(i)
         cds_matches = [dom_matches[i] for i in range(len(query)) \
             if i not in dels]
+        cds_matches.sort(key=lambda x: x[1][0])
         #bgc g_id p_id loc orf_num tot_orf dom range bitscore
         for match in cds_matches:
             sum_file.write('{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(bgc, \
