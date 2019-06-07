@@ -259,18 +259,17 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
                     top,info[0], len(info[1]), genes)
                 outf.write(string)
             bgc2topic[bgc] = topd
-    if plot:
-        print('Plotting')
-        #extract length of each bgc vs len of topic in each bgc
-        lengths = ((bgcl_dict[bgc],len(val[t][1])) for bgc,val in\
-            bgc2topic.items() for t in val)
-        len_name = os.path.join(outfolder,'len_bgcs_vs_len_topic_match.pdf')
-        plot_topic_matches_lengths(lengths, len_name)
+    # if plot:
+    #extract length of each bgc vs len of topic in each bgc
+    lengths = ((bgcl_dict[bgc],len(val[t][1])) for bgc,val in\
+        bgc2topic.items() for t in val)
+    len_name = os.path.join(outfolder,'len_bgcs_vs_len_topic_match.pdf')
+    plot_topic_matches_lengths(lengths, len_name)
 
-        #count amount of topics per bgc
-        tpb_name = os.path.join(outfolder,'topics_per_bgc.pdf')
-        topics_per_bgc = Counter([len(vals) for vals in bgc2topic.values()])
-        plot_topics_per_bgc(topics_per_bgc,tpb_name)
+    #count amount of topics per bgc
+    tpb_name = os.path.join(outfolder,'topics_per_bgc.pdf')
+    topics_per_bgc = Counter([len(vals) for vals in bgc2topic.values()])
+    plot_topics_per_bgc(topics_per_bgc,tpb_name)
     return bgc2topic
 
 def plot_topic_matches_lengths(lengths, outname):
@@ -382,19 +381,20 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder,\
         subcl_out = os.path.join(outfolder, 'known_subcluster_matches.txt')
         with open(subcl_out,'w') as outf:
             #sort the subclusters alphabetically on first info element
-            outf.write('##Values below each subcluster: overlap bgc class'+
-                ' topic topic_probability overlap_genes non_overlap_genes\n')
+            outf.write('##Values below each subcluster: %overlap len_overlap'+
+                ' bgc class topic topic_probability overlap_genes'+
+                ' non_overlap_genes\n')
             for bgc, info in sorted(known_subcl.items(),\
                 key=lambda x: x[1][0][0]):
                 for k_subclust in info:
                     outf.write('#{}\t{}\n'.format(bgc,'\t'.join(map(str,\
                         k_subclust))))
                     overlap_list = known_subcl_matches[k_subclust[0]]
-                    #give summary per topic
+                    #give summary per topic?
                     #e.g. #topic x: 12 avg_overlap: 0.403 
-                    #sort from high to low overlap
+                    #sort from high to low overlap,topic,bgc
                     for m_overlap in sorted(overlap_list, key=lambda x: \
-                        (-x[0],x[3],x[1])):
+                        (-x[0],x[4],x[2])):
                         #overlap bgc class topic prob genes:prob
                         outf.write('{}\n'.format('\t'.join(\
                             map(str,m_overlap))))
@@ -406,24 +406,25 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder,\
     return bgc2topic
 
 def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
+    '''Plot a line of the amount of known_subcl matches with different cutoffs
+
+
+    Only matches are counted that match at least two genes
     '''
-    '''
-    ys=[cutoff+i*steps for i in range(round((1.0-cutoff)/steps))]
+    ys=[cutoff+i*steps for i in range(round((1.0-cutoff)/steps)+1)]
     xs=[0]*len(ys)
     for info in known_subcl_matches.values():
         if len(info) > 0:
             for i,thresh in enumerate(ys):
                 for overlap in info:
-                    if overlap[0] > thresh and len(overlap[-2].split(','))> 1:
+                    if overlap[0] >= thresh and overlap[1] > 1:
                         xs[i]+=1
                         break
-            # for i,thresh in enumerate(ys):
-                # if any(overl>thresh for overl in overlaps):
-                    # xs[i]+=1
-    print(xs[0])
+    print('There are {} known sub_clusters with at least one'.format(xs[0])+
+        ' match of two genes with a minimum overlap of {}'.format(ys[0]))
     plt.plot(ys, xs)
     plt.xlabel('Overlap threshold')
-    plt.ylabel('Occurence')
+    plt.ylabel('Characterised subclusters with a match')
     plt.title(\
     'Number of characterised subclusters with a match according\n\
         to different overlap thresholds')
@@ -438,8 +439,10 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
     bgc_class: str, class of bgc
     matches: [[topic_num,prob,[(gene,prob)]]]
     cutoff: float, overlap cutoff used for reporting
-    matches_overlap: [[first_info_element,overlap,bgc,bgc_class,topic_num,prob,
-        overlapping_genes,non_overlapping_genes]]
+    matches_overlap: [[first_info_element,%overlap,len_overlap,bgc,bgc_class,
+        topic_num,prob,overlapping_genes,non_overlapping_genes]]
+    Matches are only reported if at least two genes match, these can be two
+    of the same genes if the prob is 1.5 or higher (close enough to two)
     '''
     matches_overlap = []
     for match in matches:
@@ -447,24 +450,42 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
         doms = set(list(zip(*g_list))[0])
         for k_subs in known_subcl.values():
             for k_sub in k_subs:
+                k_list = k_sub[-1].split(',')
                 k_sub_doms = set(k_sub[-1].split(','))
                 if '-' in k_sub_doms:
                     k_sub_doms.remove('-')
+                    k_list = [k for k in k_list if not k =='-']
                 overl_d_set = doms&k_sub_doms
-                overlap = len(overl_d_set) / len(k_sub_doms)
-                if overlap > cutoff:
+                l_overlap = len(overl_d_set)
+                if not len(k_sub_doms) - len(k_list) == 0:
+                    #there are doms in the k-subcl that are duplicated
+                    dupls = [kc for kc in Counter(k_list).items() if kc[1]>1]
+                    add_overl = 0
+                    for dom,count in dupls:
+                        if dom in doms:
+                            overl_domtups = [domt for domt in g_list \
+                                if domt[0]==dom]
+                            for overl_domtup in overl_domtups:
+                                if round(overl_domtup[1]) >= count:
+                                    l_overlap += count-1
+                overlap = l_overlap / len(k_list)
+                if overlap > cutoff and len(k_list) > 1:
+                    match_overl_genes = [(g,p,) for g,p in\
+                        g_list if g in overl_d_set]
                     overl_d = ','.join(sorted([g+':'+str(p) for g,p in\
-                        g_list if g in overl_d_set]))
+                        match_overl_genes]))
                     non_overl_d = ','.join(sorted([g+':'+str(p) for g,p in\
                         g_list if not g in overl_d_set]))
-                    matches_overlap.append([k_sub[0],round(overlap,3),bgc,\
-                        bgc_class,match[0],match[1],overl_d,non_overl_d])
+
+                    matches_overlap.append([k_sub[0],round(overlap,3),\
+                        l_overlap,bgc,bgc_class,match[0],match[1],overl_d,\
+                        non_overl_d])
     return matches_overlap
 
 def write_topic_matches(topic_matches, bgc_classes, outname,plot):
     '''Writes topic matches to a file sorted on length and alphabet
 
-    topic_matches: {topic:[[prob,(gene,prob),bgc]]}
+    topic_matches: {topic:[[prob,[(gene,prob)],bgc]]}
     bgc_classes: {bgc: [class1,class2]}
     outname: str, filepath
     '''
@@ -483,7 +504,7 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
             for p,g,bgc in matches:
                 bgc_class = bgc_classes.get(bgc,['None'])[0]
                 classes.update([bgc_class])
-                if len(g) > 1:
+                if len(g) > 1 or round(g[0][1]) > 1:
                     classes_1.update([bgc_class])
             for count_class,count in classes.items():
                 plotlines.loc[topic,count_class] = count
@@ -536,7 +557,7 @@ def barplot_topic_stats(df,outname):
     non_i = [i for i,non in enumerate(df.columns) if non == 'None'][0]
     colours = cols[:non_i]+['w']+cols[non_i:]
     ax = df.plot.bar(stacked=True, color=colours, edgecolor='#333333',\
-        width=0.75)
+        width=1.0)
     legend = ax.legend(loc='best', fontsize=\
         'x-small', title='BGC class')
     ax.add_artist(legend)
