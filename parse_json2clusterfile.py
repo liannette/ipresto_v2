@@ -7,11 +7,12 @@ separates a gene while the domains within a gene are separated by ;.
 """
 
 import argparse
+from functools import partial
 from glob import iglob
+import json
 from multiprocessing import Pool,cpu_count
 import os
 import subprocess
-import json
 
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to parse JSON\
@@ -27,6 +28,9 @@ def get_commands():
         dest="domain_overlap_cutoff", default=0.1, help="Specify at which \
         overlap percentage domains are considered to overlap. Domain with \
         the best score is kept (default=0.1).")
+    parser.add_argument("-c", "--cores", dest="cores", default=cpu_count(), 
+        help="Set the number of cores the script may use (default: use all \
+        available cores)", type=int)
     return parser.parse_args()
 
 def sign_overlap(tup1, tup2, cutoff):
@@ -44,12 +48,35 @@ def sign_overlap(tup1, tup2, cutoff):
             return True
     return False
 
-def parse_json_wrapper(in_folder,out_folder,min_overlap):
+def parse_json_wrapper(in_folder,out_folder,min_overlap,prefix,cores):
     '''Parses all json files to a csv clusterfile and a dom_hits file
 
     file_path: str, path to file
     '''
-    
+    print('\nParsing json files')
+    clus_file = os.path.join(out_folder, prefix+'clusterfile.csv')
+    d_hits_file = os.path.join(out_folder, prefix+'dom_hits.txt')
+    files = iglob(os.path.join(in_folder,prefix+'*.json'))
+    pool = Pool(cores,maxtasksperchild=20)
+    bgcs_info = pool.map(partial(parse_json, min_overlap=min_overlap),files)
+    with open(clus_file,'w') as clus_out, open(d_hits_file,'w') as dh_out:
+        for bgc_info in bgcs_info:
+            if bgc_info:
+                doms = [bgc_info[0][0]]
+                prev=1
+                gene_doms = []
+                for dom_info in bgc_info:
+                    dh_out.write('{}\n'.format(\
+                        '\t'.join(map(str,dom_info))))
+                    if dom_info[4] != prev:
+                        #merge domains within one gene
+                        doms.append(';'.join(gene_doms))
+                        gene_doms = [dom_info[6]]
+                        prev = dom_info[4]
+                    else:
+                        gene_doms.append(dom_info[6])
+                doms.append(';'.join(gene_doms))
+                clus_out.write('{}\n'.format(','.join(doms)))
 
 def parse_json(file_path,min_overlap):
     '''Parses a json file to a list of lists
@@ -71,7 +98,7 @@ def parse_json(file_path,min_overlap):
     for gene_doc in genes_doc:
         gene = [bgc]
         for x in ['locus_tag','protein_id']:
-            gene.append(gene_doc['info'][x])
+            gene.append(gene_doc['info'].get(x,''))
         for x in ['start','end']:
             gene.append(gene_doc[x])
         pfams_doc = gene_doc['pfams']
@@ -124,9 +151,7 @@ def parse_json(file_path,min_overlap):
 
 if __name__ == "__main__":
     cmd = get_commands()
-    file_path = os.path.join(cmd.in_folder,\
-        'antismashdb_v2_all.NC_014500.1.cluster006.json')
     if not os.path.isdir(cmd.out_folder):
-        subprocess.check_call('mkdir {}'.format(cmd.out_folder))
-    cluster = parse_json(file_path, cmd.domain_overlap_cutoff)
-    parse_json_wrapper(cmd.in_folder,cmd.out_folder,cmd.domain_overlap_cutoff)
+        subprocess.check_call('mkdir {}'.format(cmd.out_folder),shell=True)
+    parse_json_wrapper(cmd.in_folder,cmd.out_folder,cmd.domain_overlap_cutoff,
+        cmd.prefix,cmd.cores)
