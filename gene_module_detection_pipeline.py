@@ -62,7 +62,7 @@ from collections import OrderedDict, Counter, defaultdict
 from copy import deepcopy
 from functools import partial
 from glob import glob, iglob
-from itertools import combinations, product
+from itertools import combinations, product, islice, chain
 import matplotlib.pyplot as plt
 from multiprocessing import Pool, cpu_count
 import networkx as nx
@@ -525,15 +525,26 @@ def generate_edges(dom_dict, cutoff, cores):
     dom_dict: dict {clus1:[domains]}, clusters linked to domains
     cutoff: float, between 0-1, when clusters are similar
     cores: int, amount of cores used for calculation
+
+    returns a generator
     '''
     print("\nGenerating similarity scores")
+    edges=iter([])
     clus_names = list(dom_dict.keys())
     pairs = combinations(clus_names, 2)
-    pool = Pool(cores, maxtasksperchild = 100)
-    edges = pool.map(partial(generate_edge, d_dict = dom_dict, \
-        cutoff = cutoff), pairs)
-    edges = [edge for edge in edges if not edge == None]
-    print("Done. {} pairs above threshold".format(len(edges)))
+    #create slices of size ncr(5000,2) to improve memory usage and speed
+    npairs = ncr(len(clust_names),2)
+    slice_size = ncr(5000,2)
+    slce = list(islice(pairs,slice_size))
+    pool = Pool(cores, maxtasksperchild = 10)
+    while slce:
+        edges_slce = pool.map(partial(generate_edge, d_dict = dom_dict, \
+            cutoff = cutoff), slce)
+        edges = chain(edges,(edge for edge in edges_slce if edge))
+        slce = list(islice(pairs,slice_size))
+    pool.close()
+    pool.join()
+    print("Done")
     return edges
 
 def generate_edge(pair, d_dict, cutoff):
