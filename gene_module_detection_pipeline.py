@@ -60,7 +60,7 @@ from Bio import SeqIO
 from Bio import SearchIO
 from collections import OrderedDict, Counter, defaultdict
 from copy import deepcopy
-from functools import partial
+from functools import partial, lru_cache
 from glob import glob, iglob
 from itertools import combinations, product, islice, chain
 import matplotlib.pyplot as plt
@@ -330,6 +330,22 @@ def hmmscan_wrapper(input_folder, hmm_file, verbose, cores, \
         len(files)))
     return out_folder, domtabs_in_existing_folder
 
+def check_domtab(domtab_iterable):
+    '''To check if an assertion error is raised while parsing
+
+    domtab_iterable: generator, result of SearchIO.parse
+    returns the same generator
+    '''
+    try:
+        first = next(domtab_iterable)
+    except StopIteration:
+        #no dom hits, parse_domtab will deal with this
+        return iter([])
+    except AssertionError:
+        #some kind of error with the domtable file
+        return False
+    return chain([first],domtab_iterable)
+
 def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
     '''Parses domtab into a cluster domain file (csv)
 
@@ -350,49 +366,62 @@ def parse_domtab(domfile, clus_file, sum_file, min_overlap, verbose):
     cds_before = 0
     #list of lists for the domains in the cluster where each sublist is a gene
     cluster_doms = []
-    #for every cds that has a hit
-    for query in queries:
-        dom_matches = []
-        q_id = query.id
-        bgc,q_id = q_id.split('_gid') #make sure that bgcs with _ in name do not
-        q_id = q_id.split('_')
-        cds_num, total_genes = map(int,q_id[-1].split('/'))
-        sum_info = [q.split(':')[-1] for q in q_id[:-1]]
-        #for every hit in each cds
-        for hit in query:
-            match = hit[0]
-            domain = match.hit_id
-            range_q = match.query_range
-            bitsc = match.bitscore
-            dom_matches.append((domain, range_q, bitsc))
-        dels = []
-        if len(query) > 1:
-            for i in range(len(query)-1):
-                for j in range(i+1, len(query)):
-                    #if there is a significant overlap delete the one with
-                    #the lower bitscore
-                    if sign_overlap(dom_matches[i][1],dom_matches[j][1],
-                        min_overlap):
-                        if dom_matches[i][2] >= dom_matches[j][2]:
-                            dels.append(j)
-                        else:
-                            dels.append(i)
-        cds_matches = [dom_matches[i] for i in range(len(query)) \
-            if i not in dels]
-        cds_matches.sort(key=lambda x: x[1][0])
-        #bgc g_id p_id loc orf_num tot_orf dom range bitscore
-        for match in cds_matches:
-            sum_file.write('{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(bgc, \
-                '\t'.join(sum_info), cds_num, total_genes, match[0], \
-                ';'.join(map(str,match[1])),match[2]))
-        cds_doms = tuple(dom_m[0] for dom_m in cds_matches)
-        #if a cds has no domains print '-' in output
-        gene_gap = cds_num - cds_before -1
-        if gene_gap > 0:
-            gaps = [('-',) for x in range(gene_gap)]
-            cluster_doms += gaps
-        cluster_doms.append(cds_doms)
-        cds_before = cds_num
+    stop = False
+    while not stop:
+        try:
+            query = next(queries)
+        except AssertionError:
+            #some kind of error with the domtable file
+            print('  error in parsing {} this file is excluded'.format(\
+                domfile))
+            return
+        except StopIteration:
+            #end of queries/queries is empty
+            stop = True
+        else:
+            #for every cds that has a hit
+            dom_matches = []
+            q_id = query.id
+            #make sure that bgcs with _ in name do not get split
+            bgc,q_id = q_id.split('_gid')
+            q_id = q_id.split('_')
+            cds_num, total_genes = map(int,q_id[-1].split('/'))
+            sum_info = [q.split(':')[-1] for q in q_id[:-1]]
+            #for every hit in each cds
+            for hit in query:
+                match = hit[0]
+                domain = match.hit_id
+                range_q = match.query_range
+                bitsc = match.bitscore
+                dom_matches.append((domain, range_q, bitsc))
+            dels = []
+            if len(query) > 1:
+                for i in range(len(query)-1):
+                    for j in range(i+1, len(query)):
+                        #if there is a significant overlap delete the one with
+                        #the lower bitscore
+                        if sign_overlap(dom_matches[i][1],dom_matches[j][1],
+                            min_overlap):
+                            if dom_matches[i][2] >= dom_matches[j][2]:
+                                dels.append(j)
+                            else:
+                                dels.append(i)
+            cds_matches = [dom_matches[i] for i in range(len(query)) \
+                if i not in dels]
+            cds_matches.sort(key=lambda x: x[1][0])
+            #bgc g_id p_id loc orf_num tot_orf dom range bitscore
+            for match in cds_matches:
+                sum_file.write('{}\t{}\t{}\t{}\t{}\t{}\t{}\n'.format(bgc, \
+                    '\t'.join(sum_info), cds_num, total_genes, match[0], \
+                    ';'.join(map(str,match[1])),match[2]))
+            cds_doms = tuple(dom_m[0] for dom_m in cds_matches)
+            #if a cds has no domains print '-' in output
+            gene_gap = cds_num - cds_before -1
+            if gene_gap > 0:
+                gaps = [('-',) for x in range(gene_gap)]
+                cluster_doms += gaps
+            cluster_doms.append(cds_doms)
+            cds_before = cds_num
     if cds_before == 0:
         print(' excluding {} no domain hits present'.format(domfile))
         return
@@ -445,7 +474,8 @@ def parse_dom_wrapper(in_folder, out_folder, cutoff, verbose, \
         sumf.write('{}\n'.format('\t'.join(header)))
         for domtable in domtables:
             doms = parse_domtab(domtable, out, sumf, cutoff, verbose)
-            domc.update(doms)
+            if doms:
+                domc.update(doms)
     with open(stat_file, 'w') as stat:
         stat.write("#Total\t{}\n".format(sum(domc.values())))
         for dom, count in domc.most_common():
@@ -519,6 +549,12 @@ def is_contained(clus1, clus2):
         return True
     return False
 
+# @lru_cache(maxsize=None)
+# def init_doms(p,doms):
+    # '''Cache the doms of all the clusters to reduce computation time
+    # '''
+    # #print('Initialised dom_dict')
+
 def generate_edges(dom_dict, cutoff, cores):
     '''Returns a pair of clusters in a tuple if ai/contained above cutoff
 
@@ -529,25 +565,42 @@ def generate_edges(dom_dict, cutoff, cores):
     returns a generator
     '''
     print("\nGenerating similarity scores")
+    timeg=time.time()
     edges=iter([])
-    clus_names = list(dom_dict.keys())
-    pairs = combinations(clus_names, 2)
-    #create slices of size ncr(5000,2) to improve memory usage and speed
-    npairs = ncr(len(clust_names),2)
-    slice_size = ncr(5000,2)
-    slce = list(islice(pairs,slice_size))
-    pool = Pool(cores, maxtasksperchild = 10)
-    while slce:
-        edges_slce = pool.map(partial(generate_edge, d_dict = dom_dict, \
-            cutoff = cutoff), slce)
-        edges = chain(edges,(edge for edge in edges_slce if edge))
-        slce = list(islice(pairs,slice_size))
-    pool.close()
-    pool.join()
+    loose_dom_dict = {bgc:[d for dom in doms for d in dom] \
+        for bgc,doms in dom_dict.items()}
+    clusters = loose_dom_dict.items()
+    pairs = combinations(clusters,2)
+    slice_size = int(ncr(25000,2))
+    tot_size = ncr(len(clusters),2)
+    slce = islice(pairs,slice_size)
+    i=0
+    chunk_num = int(tot_size/slice_size)+1
+    for i in range(chunk_num):
+        tloop=time.time()
+        if i == chunk_num-1:
+            #get chunksize of remainder
+            chunksize = int((tot_size/slice_size % 1) / (cores*4))+1
+        else:
+            #the default used by map
+            chunksize = int(slice_size/(cores*4))+1
+        print(i,slice_size,int(ncr(len(clusters),2)))
+        #slce or edges_slce can now never exceed max length of list
+        with Pool(cores, maxtasksperchild = 1) as p:
+            edges_slce = p.imap_unordered(partial(generate_edge, \
+                cutoff = cutoff), slce, chunksize=chunksize)
+        #read into a list to not save generator from workers
+        edges_valid = [edge for edge in edges_slce if edge]
+        edges = chain(edges,edges_valid)
+        slce = islice(pairs,slice_size)
+        del(edges_slce)
+        i+=1
+        print(time.time()-tloop)
+    print('tot time: {}'.format(time.time()-timeg))
     print("Done")
     return edges
 
-def generate_edge(pair, d_dict, cutoff):
+def generate_edge(pair, cutoff):
     '''
     Calculate similarity scores between two bgcs and return if above cutoff
 
@@ -556,14 +609,15 @@ def generate_edge(pair, d_dict, cutoff):
     cutoff: float
     A tuple is returned that can be read as an edge by nx.Graph.add_edges_from
     '''
-    p1,p2 = pair
+    # init_doms(p1,p2)
+    (p1,clus1),(p2,clus2) = pair
     #unpack the domains from the gene tuples
-    clus1 = [d for dom in d_dict[p1] for d in dom]
-    clus2 = [d for dom in d_dict[p2] for d in dom]
+    # clus1 = [d for dom in doms1 for d in dom]
+    # clus2 = [d for dom in doms2 for d in dom]
     contained = is_contained(clus1, clus2)
     ai = calc_adj_index(clus1, clus2)
     if ai == None:
-        print('  error in generate_edge: {}'.forat(pair))
+        print('  error in generate_edge: {}'.format(pair))
     if contained or ai > cutoff:
         # print(pair,ai,contained)
         return(p1,p2,{'ai':ai,'contained':contained})
@@ -571,7 +625,7 @@ def generate_edge(pair, d_dict, cutoff):
 def generate_graph(edges, verbose):
     '''Returns a networkx graph
 
-    edges: list of tuples, (pair1,pair2,{attributes})
+    edges: list/generator of tuples, (pair1,pair2,{attributes})
     '''
     g = nx.Graph()
     g.add_edges_from(edges)
