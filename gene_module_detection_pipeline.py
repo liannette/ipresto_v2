@@ -575,7 +575,7 @@ def generate_edges(dom_dict, cutoff, cores, out_folder):
     slce = islice(pairs,slice_size)
     i=0
     chunk_num = int(tot_size/slice_size)+1
-    #update g with increments of slice_size
+    #update tempfile with increments of slice_size
     for i in range(chunk_num):
         tloop=time.time()
         if i == chunk_num-1:
@@ -597,17 +597,15 @@ def generate_edges(dom_dict, cutoff, cores, out_folder):
             cutoff = cutoff), slce, chunksize=chnksize)
         pool.close()
         pool.join()
-        pool.terminate()
         print('after join',time.time()-tloop)
         #write to file
         with open(temp_file,'a') as tempf:
             for line in edges_slce:
                 if line:
                     tempf.write('{}\n'.format('\t'.join(map(str,line))))
-        #read into a list to not save generator from workers
         # edges_valid = [edge for edge in edges_slce if edge]
         # edges = chain(edges,edges_valid)
-        # slce = islice(pairs,slice_size)
+        slce = islice(pairs,slice_size)
         del(edges_slce,pool)
         i+=1
         print(time.time()-tloop)
@@ -1155,6 +1153,8 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, \
     pool = Pool(cores,maxtasksperchild=10)
     modules = pool.imap(partial(generate_modules, dom_pairs=sign_pvs), \
         pv_values, chunksize=250)
+    pool.close()
+    pool.join()
     modules_dict = {}
     for p_mods_pair in modules:
         p,mods = list(p_mods_pair.items())[0]
