@@ -60,9 +60,10 @@ from Bio import SeqIO
 from Bio import SearchIO
 from collections import OrderedDict, Counter, defaultdict
 from copy import deepcopy
-from functools import partial, lru_cache
+from functools import partial
 from glob import glob, iglob
 from itertools import combinations, product, islice, chain
+from math import floor, log10
 import matplotlib.pyplot as plt
 from multiprocessing import Pool, cpu_count
 import networkx as nx
@@ -127,6 +128,9 @@ def get_commands():
         with BGCs and domain-combinations to start with (csv and domains in a\
         gene separated by ';'). This overwrites in_folder (which still has to\
         be supplied symbolically) and use_domtabs/use_fastas.")
+    parser.add_argument("--no_redundancy_filtering",default=False,help="If \
+        provided, redundancy filtering will not be performed",\
+        action="store_true")
     return parser.parse_args()
 
 def process_gbks(input_folder, output_folder, exclude, exclude_contig_edge,\
@@ -549,13 +553,7 @@ def is_contained(clus1, clus2):
         return True
     return False
 
-# @lru_cache(maxsize=None)
-# def init_doms(p,doms):
-    # '''Cache the doms of all the clusters to reduce computation time
-    # '''
-    # #print('Initialised dom_dict')
-
-def generate_edges(dom_dict, cutoff, cores):
+def generate_edges(dom_dict, cutoff, cores, out_folder):
     '''Returns a pair of clusters in a tuple if ai/contained above cutoff
 
     dom_dict: dict {clus1:[domains]}, clusters linked to domains
@@ -567,6 +565,7 @@ def generate_edges(dom_dict, cutoff, cores):
     print("\nGenerating similarity scores")
     timeg=time.time()
     edges=iter([])
+    temp_file = os.path.join(out_folder,'temp.txt')
     loose_dom_dict = {bgc:[d for dom in doms for d in dom] \
         for bgc,doms in dom_dict.items()}
     clusters = loose_dom_dict.items()
@@ -576,29 +575,45 @@ def generate_edges(dom_dict, cutoff, cores):
     slce = islice(pairs,slice_size)
     i=0
     chunk_num = int(tot_size/slice_size)+1
+    #update g with increments of slice_size
     for i in range(chunk_num):
         tloop=time.time()
         if i == chunk_num-1:
             #get chunksize of remainder
-            chunksize = int((tot_size/slice_size % 1) / (cores*4))+1
+            chnksize = int(((tot_size/slice_size % 1 * slice_size) / \
+                (cores*20))+1)
+            if chnksize < 5:
+                chnksize = 5
+            print('maxi',chnksize)
         else:
-            #the default used by map
-            chunksize = int(slice_size/(cores*4))+1
-        print(i,slice_size,int(ncr(len(clusters),2)))
+            #the default used by map divided by 10
+            chnksize = int((slice_size/(cores*20))+1)
+            print('normali',chnksize)
+        # chnksize = 1000
+        print(i,chnksize,slice_size,int(ncr(len(clusters),2)))
         #slce or edges_slce can now never exceed max length of list
-        with Pool(cores, maxtasksperchild = 1) as p:
-            edges_slce = p.imap_unordered(partial(generate_edge, \
-                cutoff = cutoff), slce, chunksize=chunksize)
+        pool =  Pool(cores, maxtasksperchild = 10)
+        edges_slce = pool.imap(partial(generate_edge, \
+            cutoff = cutoff), slce, chunksize=chnksize)
+        pool.close()
+        pool.join()
+        pool.terminate()
+        print('after join',time.time()-tloop)
+        #write to file
+        with open(temp_file,'a') as tempf:
+            for line in edges_slce:
+                if line:
+                    tempf.write('{}\n'.format('\t'.join(map(str,line))))
         #read into a list to not save generator from workers
-        edges_valid = [edge for edge in edges_slce if edge]
-        edges = chain(edges,edges_valid)
-        slce = islice(pairs,slice_size)
-        del(edges_slce)
+        # edges_valid = [edge for edge in edges_slce if edge]
+        # edges = chain(edges,edges_valid)
+        # slce = islice(pairs,slice_size)
+        del(edges_slce,pool)
         i+=1
         print(time.time()-tloop)
     print('tot time: {}'.format(time.time()-timeg))
     print("Done")
-    return edges
+    return temp_file
 
 def generate_edge(pair, cutoff):
     '''
@@ -620,7 +635,7 @@ def generate_edge(pair, cutoff):
         print('  error in generate_edge: {}'.format(pair))
     if contained or ai > cutoff:
         # print(pair,ai,contained)
-        return(p1,p2,{'ai':ai,'contained':contained})
+        return(p1,p2,ai,contained)
 
 def generate_graph(edges, verbose):
     '''Returns a networkx graph
@@ -634,6 +649,17 @@ def generate_graph(edges, verbose):
         print(' {} nodes'.format(g.number_of_nodes()))
         print(' {} edges'.format(g.number_of_edges()))
     return g
+
+def read_edges_from_temp(file_path):
+    '''Yields edges from temp file
+    '''
+    tr='True'
+    with open(file_path, 'r') as inf:
+        for line in inf:
+            line = line.strip('\n').split('\t')
+            cont = line[-1]==tr
+            tup = (line[0],line[1], {'ai':float(line[2]),'contained':cont})
+            yield tup
 
 def find_representatives(clqs, d_l_dict, graph):
     '''
@@ -918,9 +944,11 @@ def calc_adj_pval_wrapper(count_dict, clusdict, cores, verbose):
     '''
     print('Calculating adjacency pvalues')
     N = sum([len(values) for values in clusdict.values()])
-    pool = Pool(cores, maxtasksperchild=20)
+    pool = Pool(cores, maxtasksperchild=5)
     pvals_ori = pool.map(partial(calc_adj_pval, counts=count_dict, Nall=N), \
         count_dict.items())
+    pool.close()
+    pool.join()
     #remove Nones, unlist and sort
     pvals_ori = [lst for lst in pvals_ori if lst]
     pvals_ori = sorted([tup for lst in pvals_ori for tup in lst])
@@ -1021,9 +1049,11 @@ def calc_coloc_pval_wrapper(count_dict, clusdict, cores, verbose):
     '''
     print('Calculating colocalisation pvalues')
     N = sum([len(remove_dupl_doms(values)) for values in clusdict.values()])
-    pool = Pool(cores, maxtasksperchild=50)
+    pool = Pool(cores, maxtasksperchild=1)
     pvals_ori = pool.map(partial(calc_coloc_pval, counts=count_dict, Nall=N), \
         count_dict.items())
+    pool.close()
+    pool.join()
     #remove Nones, unlist and sort
     pvals_ori = [lst for lst in pvals_ori if lst]
     pvals_ori = sorted([tup for lst in pvals_ori for tup in lst])
@@ -1091,6 +1121,16 @@ def visualise_graph(graph, subgraph_list = None, groups = True):
                     node_color='#91bfdb', marker='s', **options)
     plt.show()
 
+def round_to_n(x,n):
+    '''Round x to n significant decimals
+
+    x: int/float
+    n: int
+    '''
+    if x <= 0:
+        return 0
+    return round(x, -int(floor(log10(x))) + (n - 1))
+
 def generate_modules_wrapper(pval_edges, sign_cutoff, cores, \
     verbose):
     '''
@@ -1108,14 +1148,16 @@ def generate_modules_wrapper(pval_edges, sign_cutoff, cores, \
     pv_values = {pv['pval'] for pv in list(zip(*sign_pvs))[2]}
     #watch out if pv_values gets really big, maybe get 100,000 fixed numbers
     #to loop over if there are more than 100,000 pv_values
+    #try to reduce the number of comparisons by rounding the pvalues
+    if len(pv_values) > 100000:
+        pv_values = {round_to_n(x,3) for x in pv_values}
     print('  looping through {} pvalue cutoffs'.format(len(pv_values)))
-    pool = Pool(cores,maxtasksperchild=100)
+    pool = Pool(cores,maxtasksperchild=10)
     modules = pool.imap(partial(generate_modules, dom_pairs=sign_pvs), \
         pv_values, chunksize=250)
     modules_dict = {}
     for p_mods_pair in modules:
-        p = list(p_mods_pair)[0]
-        mods = p_mods_pair[p]
+        p,mods = list(p_mods_pair.items())[0]
         for mod in mods:
             try:
                 prev_val = modules_dict[mod]
@@ -1342,16 +1384,30 @@ if __name__ == "__main__":
         for bgc,genes in dom_dict.items()}
     filt_file = '{}_filtered_clusterfile.csv'.format(\
         clus_file.split('_clusterfile.csv')[0])
-    similar_bgcs = generate_edges(dom_dict, cmd.sim_cutoff,\
-        cmd.cores)
-    graph = generate_graph(similar_bgcs, True)
-    uniq_bgcs = [clus for clus in dom_dict.keys() if not clus in graph.nodes()]
-    all_reps = find_all_representatives(doml_dict, graph)
-    if cmd.include_list:
-        include_list = read_txt(cmd.include_list)
-        dom_dict = filter_out_domains(dom_dict, include_list)
-    all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps, \
-        dom_dict, filt_file)
+    if not os.path.isfile(filt_file):
+        #do not perform redundancy filtering if it already exist
+        if not cmd.no_redundancy_filtering:
+            edges_file = generate_edges(dom_dict, cmd.sim_cutoff,\
+                cmd.cores, cmd.out_folder)
+            similar_bgcs = read_edges_from_temp(edges_file)
+            graph = generate_graph(similar_bgcs, True)
+            uniq_bgcs = [clus for clus in dom_dict.keys() if not clus in \
+                graph.nodes()]
+            all_reps = find_all_representatives(doml_dict, graph)
+        else:
+            #dont perform redundancy filtering and duplicate clus_file to
+            #filt file, representative file is created but this is symbolic
+            uniq_bgcs = list(dom_dict.keys())
+            all_reps = {}
+            print('\nRedundancy filtering is turned off.')
+        if cmd.include_list:
+            include_list = read_txt(cmd.include_list)
+            dom_dict = filter_out_domains(dom_dict, include_list)
+        all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps, \
+            dom_dict, filt_file)
+    else:
+        print('\nFiltered clusterfile existed, redundancy filtering not'+
+            ' performed again')
 
     #detecting modules with statistical approach
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
