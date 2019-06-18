@@ -805,7 +805,7 @@ def remove_infr_doms(clusdict, m_gens, verbose):
         else:
             if verbose:
                 print('  {} removed as it has less than min_genes'.format(k))
-    print(' {} clusters have less than {} domains and are excluded'.format(\
+    print(' {} clusters have less than {} genes and are excluded'.format(\
         len(clusdict.keys()) - len(clus_no_deldoms), m_gens))
     return clus_no_deldoms
 
@@ -1271,9 +1271,12 @@ def link_all_mods2bgcs(bgcs, modules, cores):
     modules: list of module tuples of gene tuples
     cores: int, amount of cores to use
     '''
-    pool = Pool(cores, maxtasksperchild=100)
+    print('\nLinking modules to BGCs')
+    pool = Pool(cores, maxtasksperchild=10)
     bgcs_mod = pool.starmap(partial(link_mods2bgc, modules=modules), \
         bgcs.items())
+    pool.close()
+    pool.join()
     bgc_mod_dict = {pair[0]:pair[1] for pair in bgcs_mod}
     return bgc_mod_dict
 
@@ -1283,18 +1286,19 @@ def remove_infr_mods(bgc_mod_dict, modules_dict):
     bgc_mod_dict: dict of {bgc: [(modules)]}
     modules: dict  of {mod:[info]}
     '''
+    print('\nRemoving modules that occur less than twice')
     new_bgc_dict = deepcopy(bgc_mod_dict)
     new_mods_dict = deepcopy(modules_dict)
     mod_counts = Counter(modules_dict.keys())
-    mod_counts.update([mod for modlist in bgc_mod_dict.values() \
-        for mod in modlist])
+    mod_counts.update((mod for modlist in bgc_mod_dict.values() \
+        for mod in modlist))
     #I initialised all mods with 1 so the if statements says < 3 instead of 2
-    infr_mods = [mod for mod, count in mod_counts.items() if count < 3]
+    infr_mods = {mod for mod, count in mod_counts.items() if count < 3}
     for infr_mod in infr_mods:
         del new_mods_dict[infr_mod]
     for bgc,mods in new_bgc_dict.items():
         new_bgc_dict[bgc] = [mod for mod in mods if not mod in infr_mods]
-    print('\nRemoving {:.1f}% of modules that occur less than twice'.format(\
+    print('  removed {:.1f}% of modules'.format(\
         (len(modules_dict)-len(new_mods_dict))/len(modules_dict)*100))
     return new_bgc_dict,new_mods_dict
 
