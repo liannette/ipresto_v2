@@ -16,8 +16,8 @@ import numpy as np
 from operator import itemgetter
 import os
 import pandas as pd
-import scipy.cluster.hierarchy as sch
-import seaborn as sns
+# import scipy.cluster.hierarchy as sch
+# import seaborn as sns
 from statistics import mean,median
 import subprocess
 from sys import argv
@@ -71,64 +71,15 @@ def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
                         xs[i]+=1
                         break
     print('There are {} known sub_clusters with at least one'.format(xs[0])+
-        ' match of two genes with a minimum overlap of {}'.format(ys[0]))
+        ' overlap of two genes with a minimum overlap % of {}'.format(ys[0]))
     plt.plot(ys, xs)
     plt.xlabel('Overlap threshold')
-    plt.ylabel('Characterised subclusters with a match')
+    plt.ylabel('Characterised subclusters with an overlap')
     plt.title(\
-    'Number of characterised subclusters with a match according\n\
-        to different overlap thresholds')
+    'Number of characterised subclusters overlapping with the statistical \n\
+        method according to different overlap thresholds')
     plt.savefig(outname)
     plt.close()
-
-def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
-    '''Find % overlap with known subclusters and returns it as a list
-
-    known_subcl: {bgc: [[info,domains]]}
-    bgc: str, bgcname
-    bgc_class: str, class of bgc
-    matches: [[domain_combinations]]
-    cutoff: float, overlap cutoff used for reporting
-    matches_overlap: [[first_info_element,%overlap,len_overlap,bgc,bgc_class,
-        topic_num,prob,overlapping_genes,non_overlapping_genes]]
-    '''
-    matches_overlap = []
-    for match in matches:
-        g_list = match[2]
-        doms = set(list(zip(*g_list))[0])
-        for k_subs in known_subcl.values():
-            for k_sub in k_subs:
-                k_list = k_sub[-1].split(',')
-                k_sub_doms = set(k_sub[-1].split(','))
-                if '-' in k_sub_doms:
-                    k_sub_doms.remove('-')
-                    k_list = [k for k in k_list if not k =='-']
-                overl_d_set = doms&k_sub_doms
-                l_overlap = len(overl_d_set)
-                if not len(k_sub_doms) - len(k_list) == 0:
-                    #there are doms in the k-subcl that are duplicated
-                    dupls = [kc for kc in Counter(k_list).items() if kc[1]>1]
-                    add_overl = 0
-                    for dom,count in dupls:
-                        if dom in doms:
-                            overl_domtups = [domt for domt in g_list \
-                                if domt[0]==dom]
-                            for overl_domtup in overl_domtups:
-                                if round(overl_domtup[1]) >= count:
-                                    l_overlap += count-1
-                overlap = l_overlap / len(k_list)
-                if overlap > cutoff and len(k_list) > 1:
-                    match_overl_genes = [(g,p,) for g,p in\
-                        g_list if g in overl_d_set]
-                    overl_d = ','.join(sorted([g+':'+str(p) for g,p in\
-                        match_overl_genes]))
-                    non_overl_d = ','.join(sorted([g+':'+str(p) for g,p in\
-                        g_list if not g in overl_d_set]))
-
-                    matches_overlap.append([k_sub[0],round(overlap,3),\
-                        l_overlap,bgc,bgc_class,match[0],match[1],overl_d,\
-                        non_overl_d])
-    return matches_overlap
 
 def read2dict(filepath, sep=',',header=False):
     '''Read file into a dict {first_column:[other_columns]}
@@ -147,7 +98,7 @@ def read2dict(filepath, sep=',',header=False):
     return output
 
 def find_stat_method_overlap(mods, known_subcl, bgc_classes, cutoff, \
-    mods2bgc, outfolder):
+    mods2bgc, outfile):
     '''
 
     mods: dict of {module_tuple:[number,other_info]}
@@ -156,37 +107,86 @@ def find_stat_method_overlap(mods, known_subcl, bgc_classes, cutoff, \
     cutoff: float
     mods2bgc: {mod_number:[bgcs]}
     outfolder: str,filepath
-    match_dict: {known_subcl:[%overlap,len_overlap,bgc,bgc_class,
-        topic_num,prob,overlapping_genes,non_overlapping_genes]}
+    match_dict: {known_subcl_info:[%overlap,len_overlap, mod_number,\
+        overlapping_genes,non_overlapping_genes,[bgc_and_class_str]]} 
+        known_subcl_info in this case is the first info element from info in
+        known_subcl
     '''
+    print('\nLinking modules to known subclusters')
     match_dict = defaultdict(list)
     #loop known_subcl and then each mod
-    for info in known_subcl.values():
-        matches_k = []
-        name_k = info[0]
-        doms_k = info[-1].split(',')
-        doms_k_set = set(k_sub[-1].split(','))
-        if '-' in doms_k_set:
-            doms_k_set.remove('-')
-            doms_k = [k for k in doms_k if not k =='-']
-        if doms_k:
-            for mod in mods:
-                mod_set = set(mod)
-                dom_overlap_set = doms_k_set&mod_set
-                l_overlap = len(dom_overlap_set)
-                overlap = l_overlap / len(doms_k_set)
-                if overlap >= cutoff:
-                    mod_num = mods[mod][0]
-                    bgcs = sorted(mods2bgc[mod_num])
-                    overl_genes = sorted(dom_overlap_set)
-                    non_overl_genes = sorted(mod_set|doms_k_set)
-                    for bgc in bgcs:
-                        bgc_class = bgc_classes.get(bgc,['None'])[0]
-                        match = [overlap,l_overlap,bgc,bgc_class,mod_num,\
-                            overl_genes,non_overl_genes]
+    for infos in known_subcl.values():
+        for info in infos:
+            name_k = info[0]
+            doms_k = info[-1].split(',')
+            doms_k_set = set(doms_k)
+            if '-' in doms_k_set:
+                doms_k_set.remove('-')
+                doms_k = [k for k in doms_k if not k =='-']
+            if doms_k:
+                for mod in mods:
+                    mod_set = set(mod)
+                    dom_overlap_set = doms_k_set&mod_set
+                    l_overlap = len(dom_overlap_set)
+                    overlap = round(l_overlap / len(doms_k_set),3)
+                    if overlap >= cutoff:
+                        mod_num = mods[mod][0]
+                        bgcs = sorted(mods2bgc[mod_num])
+                        overl_genes = ','.join(sorted(dom_overlap_set))
+                        non_overl_genes = ','.join(sorted(\
+                            mod_set.difference(doms_k_set)))
+                        bgc_list=[]
+                        for bgc in bgcs:
+                            bgc_class = bgc_classes.get(bgc,['None'])[0]
+                            bgc_list.append('{}\t{}'.format(bgc,bgc_class))
+                        match = [overlap,l_overlap,mod_num, overl_genes,\
+                            non_overl_genes,bgc_list]
                         match_dict[name_k].append(match)
-            print(match_dict)
-            break
+    write_stat_method_overlap(match_dict,known_subcl,cutoff,outfile)
+    plotname = outfile.split('.txt')[0] + '_vs_cutoff.pdf'
+    line_plot_known_matches(match_dict,plotname,cutoff)
+
+def write_stat_method_overlap(match_dict, known_subcl, cutoff, outfile):
+    '''Write overlap to file
+    '''
+    print('  writing overlap to {}'.format(outfile))
+    with open(outfile,'w') as outf:
+        outf.write('##Values below each subcluster: %overlap len_overlap'+
+            ' mod_num overlap_genes non_overlap_genes\n'+
+            '##Below that are the BGCs that have the module with class\n')
+        for bgc,k_subcl_info in sorted(known_subcl.items(),\
+            key=lambda x: x[1][0][0]):
+            for k_subcl in k_subcl_info:
+                outf.write('#{}\t{}\n'.format(bgc,'\t'.join(map(str,\
+                    k_subcl))))
+                overlap_list = match_dict[k_subcl[0]]
+                for m_overlap in sorted(overlap_list, key=lambda x:\
+                    (-x[0],len(x[4]),int(x[2]))):
+                    bgc_list = m_overlap.pop(-1)
+                    outf.write('{}\n'.format('\t'.join(map(str,m_overlap))))
+                    for bgc_class in bgc_list:
+                        outf.write('\t{}\n'.format(bgc_class))
+
+
+# with open(subcl_out,'w') as outf:
+            # #sort the subclusters alphabetically on first info element
+            # outf.write('##Values below each subcluster: %overlap len_overlap'+
+                # ' bgc class topic topic_probability overlap_genes'+
+                # ' non_overlap_genes\n')
+            # for bgc, info in sorted(known_subcl.items(),\
+                # key=lambda x: x[1][0][0]):
+                # for k_subclust in info:
+                    # outf.write('#{}\t{}\n'.format(bgc,'\t'.join(map(str,\
+                        # k_subclust))))
+                    # overlap_list = known_subcl_matches[k_subclust[0]]
+                    # #give summary per topic?
+                    # #e.g. #topic x: 12 avg_overlap: 0.403 
+                    # #sort from high to low overlap,topic,bgc
+                    # for m_overlap in sorted(overlap_list, key=lambda x: \
+                        # (-x[0],x[4],x[2])):
+                        # #overlap bgc class topic prob genes:prob
+                        # outf.write('{}\n'.format('\t'.join(\
+                            # map(str,m_overlap))))
 
 if __name__ == '__main__':
     start = time.time()
@@ -226,12 +226,12 @@ if __name__ == '__main__':
             if mod_nums:
                 for m_num in mod_nums:
                     mod_nums2bgc[m_num].append(line[0])
-    # process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num, bgcs,
-        # cmd.min_feat_score, bgclist, cmd.out_folder, bgc_classes_dict, \
-        # amplif=cmd.amplify, plot=cmd.plot, known_subcl=known_subclusters)
-    
+
+    prefix = cmd.bgcfile.split('.csv')[0].split('filtered_clusterfile')[0]
+    out_file = os.path.join(cmd.out_folder,prefix+\
+        'known_subcluster_overlap_statistical_method.txt')
     find_stat_method_overlap(modules, known_subclusters, bgc_classes_dict,\
-        0.4, mod_nums2bgc, cmd.out_folder)
+        0.4, mod_nums2bgc, out_file)
 
     end = time.time()
     t = end-start
