@@ -3,6 +3,7 @@
 Author: Joris Louwen
 Script to find modules with LDA algorithm.
 """
+
 import argparse
 from collections import Counter, defaultdict
 from functools import partial
@@ -206,6 +207,15 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     write_topic_matches(t_matches, bgc_classes, top_match_file_filt,plot=True)
     bgc_with_topics = retrieve_match_per_bgc(t_matches, bgc_classes, \
         known_subcl,outfolder,plot=True)
+    #make filtered scatterplot
+    lengths = []
+    for bgc,val in bgc_with_topics.items():
+        bgclen = bgcl_dict[bgc]
+        for match in val:
+            probs = list(zip(*match[2]))[1]
+            probs = [1 if p<1 else round(p) for p in probs]
+            lengths.append((bgclen,sum(probs)))
+    plot_topic_matches_lengths(lengths,len_name)
     if plot:
         bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
             metric='euclidean')
@@ -213,6 +223,10 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
             metric='correlation')
         bgc_class_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
             metric='correlation')
+    len_name = os.path.join(outfolder,\
+        'len_bgcs_vs_len_topic_match_filtered.pdf')
+    
+
 
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
@@ -409,7 +423,8 @@ def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
     '''Plot a line of the amount of known_subcl matches with different cutoffs
 
 
-    Only matches are counted that match at least two genes
+    Matches are only reported if at least two genes match, these can be two
+    of the same genes if the prob is 1.5 or higher (close enough to two)
     '''
     ys=[cutoff+i*steps for i in range(round((1.0-cutoff)/steps)+1)]
     xs=[0]*len(ys)
@@ -441,8 +456,6 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
     cutoff: float, overlap cutoff used for reporting
     matches_overlap: [[first_info_element,%overlap,len_overlap,bgc,bgc_class,
         topic_num,prob,overlapping_genes,non_overlapping_genes]]
-    Matches are only reported if at least two genes match, these can be two
-    of the same genes if the prob is 1.5 or higher (close enough to two)
     '''
     matches_overlap = []
     for match in matches:
