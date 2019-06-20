@@ -563,8 +563,7 @@ def generate_edges(dom_dict, cutoff, cores, out_folder):
     returns a generator
     '''
     print("\nGenerating similarity scores")
-    timeg=time.time()
-    edges=iter([])
+    #temp file storing the edges so they are not in memory and passed in pool
     temp_file = os.path.join(out_folder,'temp.txt')
     loose_dom_dict = {bgc:[d for dom in doms for d in dom] \
         for bgc,doms in dom_dict.items()}
@@ -573,43 +572,35 @@ def generate_edges(dom_dict, cutoff, cores, out_folder):
     slice_size = int(ncr(25000,2))
     tot_size = ncr(len(clusters),2)
     slce = islice(pairs,slice_size)
-    i=0
     chunk_num = int(tot_size/slice_size)+1
+    tloop=time.time()
     #update tempfile with increments of slice_size
     for i in range(chunk_num):
-        tloop=time.time()
         if i == chunk_num-1:
             #get chunksize of remainder
             chnksize = int(((tot_size/slice_size % 1 * slice_size) / \
                 (cores*20))+1)
             if chnksize < 5:
                 chnksize = 5
-            print('maxi',chnksize)
         else:
-            #the default used by map divided by 10
+            #the default used by map divided by 5
             chnksize = int((slice_size/(cores*20))+1)
-            print('normali',chnksize)
-        # chnksize = 1000
-        print(i,chnksize,slice_size,int(ncr(len(clusters),2)))
-        #slce or edges_slce can now never exceed max length of list
         pool =  Pool(cores, maxtasksperchild = 10)
         edges_slce = pool.imap(partial(generate_edge, \
             cutoff = cutoff), slce, chunksize=chnksize)
         pool.close()
         pool.join()
-        print('after join',time.time()-tloop)
         #write to file
         with open(temp_file,'a') as tempf:
             for line in edges_slce:
                 if line:
                     tempf.write('{}\n'.format('\t'.join(map(str,line))))
-        # edges_valid = [edge for edge in edges_slce if edge]
-        # edges = chain(edges,edges_valid)
         slce = islice(pairs,slice_size)
         del(edges_slce,pool)
-        i+=1
-        print(time.time()-tloop)
-    print('tot time: {}'.format(time.time()-timeg))
+        if i == 0:
+            t = (time.time()-tloop)*chunk_num
+            t_str = '  it will take around {}h{}m{}s'.format(int(t/3600),\
+                int(t%3600/60), int(t%3600%60)) #based on one loop
     print("Done")
     return temp_file
 
