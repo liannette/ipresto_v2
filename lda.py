@@ -89,7 +89,7 @@ def remove_infr_doms_str(clusdict, m_gens, verbose):
     domcounter = Counter()
     domcounter.update([v for vals in clusdict.values() for v in vals \
         if not v == '-'])
-    deldoms = [key for key in domcounter if domcounter[key] <= 2]
+    deldoms = {key for key in domcounter if domcounter[key] <= 2}
     print('  {} domain combinations are left, {} are removed'.format(\
         len(domcounter.keys())-len(deldoms),len(deldoms)))
     clus_no_deldoms = {}
@@ -122,20 +122,21 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     '''
     dict_lda = Dictionary(domlist)
     dict_lda.filter_extremes(no_below=no_below, no_above=no_above)
-    print(dict_lda)
+    print('\nConstructing LDA model with:', dict_lda)
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
     model = os.path.join(outfolder,'lda_model')
     if not os.path.exists(model):
         lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
-            id2word=dict_lda, workers=cores, per_word_topics=True)
+            id2word=dict_lda, workers=cores, per_word_topics=True, \
+            iterations=1000, gamma_threshold=0.00001, offset=10,passes=20)
         lda.save(model)
     else:
         print('Loaded existing LDA model')
         lda = LdaMulticore.load(model)
     cm = CoherenceModel(model=lda, corpus=corpus_bow, dictionary=dict_lda,\
         coherence='c_v', texts=domlist)
-    coherence = cm.get_coherence()
-    print('Coherence: {}, num_topics: {}'.format(coherence, num_topics))
+    # coherence = cm.get_coherence()
+    # print('Coherence: {}, num_topics: {}'.format(coherence, num_topics))
     if ldavis:
         visname = os.path.join(outfolder,'lda.html')
         print('Running pyLDAvis for visualisation')
@@ -164,34 +165,8 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
                         zip(range(topic_num), nums)}
     else:
         trans = {x:'-' for x in range(topic_num)}
-    select_features = [] #list with how many features to select to get to
-    #a certain score like 0.3 for every topic
-    out_topics = os.path.join(outfolder, 'topics.txt')
-    #to record the features as {topic:[(gene,prob)]}, features are selected
-    #until the min_f_score. coul also just select a certain number like 15
-    filt_features = {}
-    with open(out_topics,'w') as outf:
-        outf.write('Topic\tNumber_LDAvis\tDomain_combinations\tScores\n')
-        for top, mod in lda_topics:
-            nums = []
-            doms = []
-            for m in mod.split(' + '):
-                num, dom = m.split('*')
-                dom = dom.strip('"')
-                nums.append(float(num))
-                doms.append(dom)
-            s=[]
-            m_len = len([s.append(num) for num in nums \
-                if sum(s) < min_f_score])
-            select_features.append(m_len)
-            if m_len > feat_num:
-                filt_features[top] = set(doms[:feat_num])
-            else:
-                filt_features[top] = set(doms[:m_len])
-            #now all features, change to doms[:m_len] for features until min_f
-            outf.write('{}\t{}\t{}\t{}\n'.format(top,trans[top],\
-                ','.join(doms),','.join(map(str,nums))))
-    # print(select_features, mean(select_features))
+    filt_features,zero_topics = select_number_of_features(lda_topics,\
+        outfolder,min_f_score,feat_num,trans)
     bgcl_dict = {bgc: sum(1 for g in genes if not g == '-') \
         for bgc,genes in bgc_dict.items()}
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
@@ -215,6 +190,8 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
             probs = list(zip(*match[2]))[1]
             probs = [1 if p<1 else round(p) for p in probs]
             lengths.append((bgclen,sum(probs)))
+    len_name = os.path.join(outfolder,\
+        'len_bgcs_vs_len_topic_match_filtered.pdf')
     plot_topic_matches_lengths(lengths,len_name)
     if plot:
         bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
@@ -223,11 +200,56 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
             metric='correlation')
         bgc_class_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
             metric='correlation')
-    len_name = os.path.join(outfolder,\
-        'len_bgcs_vs_len_topic_match_filtered.pdf')
-    
 
 
+def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
+    trans):
+    '''Find list of features to use for each topic and write to topics.txt
+
+    lda_topics: list of tuples, [(topic_number,features_string)]
+    outfolder: str, path
+    min_f_score: float, features will be selected until their cumulative
+        score reaches this number
+    feat_num: int, maximum amount of features to use
+    trans: dict linking lda topics to topic names in ldavis if present
+    filt_features: dict of sets, for each topic the domains to use
+    zero_topics: list, storing topics that are empty
+    '''
+    out_topics = os.path.join(outfolder, 'topics.txt')
+    #to record the features as {topic:[(gene,prob)]}, features are selected
+    #until the min_f_score or to feat_num as a maximum
+    filt_features = {}
+    zero_topics = []
+    with open(out_topics,'w') as outf:
+        outf.write('Topic\tNumber_LDAvis\tSelected_domains\t'+\
+            'Domain_combinations\tScores\n')
+        for top, mod in lda_topics:
+            nums = []
+            doms = []
+            for m in mod.split(' + '):
+                num, dom = m.split('*')
+                dom = dom.strip('"')
+                num = float(num)
+                if num == 0:
+                    if not nums:
+                        zero_topics.append(top)
+                    break
+                nums.append(num)
+                doms.append(dom)
+            s=[]
+            m_len = len([s.append(num) for num in nums \
+                if sum(s) < min_f_score])
+            if m_len > feat_num:
+                sel = feat_num
+            else:
+                sel = m_len
+            filt_features[top] = set(doms[:sel])
+            select_features = ','.join(a+':'+str(b) for a,b in \
+                zip(doms[:sel],nums[:sel]))
+            outf.write('{}\t{}\t{}\t{}\t{}\n'.format(top,trans[top],\
+                select_features,','.join(doms),','.join(map(str,nums))))
+    print('  {} empty topics'.format(len(zero_topics)))
+    return(filt_features,zero_topics)
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
     plot=True, amplif=False):
@@ -237,7 +259,9 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
     Writes file to outfolder/bgc_topics.txt and supplies plots if plot=True
     '''
     print('\nLinking topics to BGCs')
-    doc_lda = lda[corpus_bow]
+    #lda[corpus_bow] for unseen documents
+    doc_lda = lda.get_document_topics(corpus_bow,per_word_topics=True)
+    print('  loaded corpus linked to topics')
     doc_topics = os.path.join(outfolder, 'bgc_topics.txt')
     bgc2topic = {}
     if amplif:
@@ -259,8 +283,8 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
                         #each t is a tuple of (topic, probability)
                         topd[t[0]][1].append((name,t[1]))
                     except KeyError:
-                        #if this happens this topic (and term) have such
-                        #a low probability that the lda leaves out this topic
+                        #if this happens the term has such a low probability
+                        #for this topic that it doesnt occur in doc_doms[0]
                         pass
             outf.write('>{}\n'.format(bgc))
             outf.write('len={}\n'.format(bgcl_dict[bgc]))
@@ -275,6 +299,7 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
             bgc2topic[bgc] = topd
     # if plot:
     #extract length of each bgc vs len of topic in each bgc
+    print('  plotting length of matches vs length of bgcs')
     lengths = ((bgcl_dict[bgc],len(val[t][1])) for bgc,val in\
         bgc2topic.items() for t in val)
     len_name = os.path.join(outfolder,'len_bgcs_vs_len_topic_match.pdf')
@@ -437,7 +462,10 @@ def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
                         break
     print('There are {} known sub_clusters with at least one'.format(xs[0])+
         ' match of two genes with a minimum overlap of {}'.format(ys[0]))
-    plt.plot(ys, xs)
+    print(ys,xs)
+    fig,ax = plt.subplots()
+    line = ax.plot(ys,xs)
+    ax.set_ylim(0,len(known_subcl_matches))
     plt.xlabel('Overlap threshold')
     plt.ylabel('Characterised subclusters with a match')
     plt.title(\
@@ -502,6 +530,7 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
     bgc_classes: {bgc: [class1,class2]}
     outname: str, filepath
     '''
+    print('\nWriting filtered matches to {}'.format(outname))
     s_b_c = set([v for vals in bgc_classes.values() for v in vals])
     s_b_c.add('None')
     plotlines = pd.DataFrame(columns=sorted(s_b_c))
@@ -517,8 +546,12 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
             for p,g,bgc in matches:
                 bgc_class = bgc_classes.get(bgc,['None'])[0]
                 classes.update([bgc_class])
-                if len(g) > 1 or round(g[0][1]) > 1:
-                    classes_1.update([bgc_class])
+                try:
+                    if len(g) > 1 or round(g[0][1]) > 1:
+                        classes_1.update([bgc_class])
+                except IndexError:
+                    print(topic,p,g,bgc)
+                    pass
             for count_class,count in classes.items():
                 plotlines.loc[topic,count_class] = count
                 plotlines_1.loc[topic,count_class] = classes_1[count_class]
@@ -591,10 +624,15 @@ def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
     min_feat_match: float, minimal score of a feature matching in a topic in
         a bgc
     '''
+    print('\nFiltering matches')
     filt_topic_matches = defaultdict(list)
     for topic, matches in topic_matches.items():
         # filt_topic_matches[topic] = []
-        use_feats = topic_features[topic]
+        try:
+            use_feats = topic_features[topic]
+        except KeyError:
+            #topic is empty
+            use_feats = {}
         for match in matches:
             match_p = match[0]
             bgc = match[2]
@@ -768,7 +806,8 @@ if __name__ == '__main__':
     if not os.path.isdir(cmd.out_folder):
         subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
 
-    bgcs = remove_infr_doms_str(bgcs, 0, False)
+    bgcs = remove_infr_doms_str(bgcs, 1, False)
+
     if cmd.amplify:
         bgc_items = []
         for bgc in bgcs.items():
