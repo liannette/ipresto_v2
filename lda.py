@@ -7,6 +7,7 @@ Script to find modules with LDA algorithm.
 import argparse
 from collections import Counter, defaultdict
 from functools import partial
+from math import ceil
 import matplotlib
 matplotlib.use('Agg') #to not rely on X-forwarding (not available in screen)
 import matplotlib.pyplot as plt
@@ -70,10 +71,12 @@ def get_commands():
         several aspects of the output. Default is off.", default=False, \
         action="store_true")
     parser.add_argument("--known_subclusters", help="A tab delimited file \
-    with known subclusters. Should contain subclusters in the last column and\
-    BGC identifiers in the first column. Subclusters are comma separated\
-    genes represented as domains. Multiple domains in a gene are separated by\
-    semi-colon.")
+        with known subclusters. Should contain subclusters in the last column\
+        and BGC identifiers in the first column. Subclusters are comma \
+        separated genes represented as domains. Multiple domains in a gene \
+        are separated by semi-colon.")
+    parser.add_argument("--min_genes", help="Minimum length (not counting \
+        genes) of a BGC to be included in the analysis",default=1,type=int)
     return parser.parse_args()
 
 def remove_infr_doms_str(clusdict, m_gens, verbose):
@@ -101,7 +104,7 @@ def remove_infr_doms_str(clusdict, m_gens, verbose):
         else:
             if verbose:
                 print('  {} removed as it has less than min_genes'.format(k))
-    print(' {} clusters have less than {} domains and are excluded'.format(\
+    print(' {} clusters have less than {} genes and are excluded'.format(\
         len(clusdict.keys()) - len(clus_no_deldoms), m_gens))
     return clus_no_deldoms
 
@@ -126,9 +129,13 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
     model = os.path.join(outfolder,'lda_model')
     if not os.path.exists(model):
+        #to allow for 1000 iterations of chunksize 2000
+        passes = ceil(1000*2000/len(domlist))
+        if passes > 100:
+            passes = 100
         lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
             id2word=dict_lda, workers=cores, per_word_topics=True, \
-            iterations=1000, gamma_threshold=0.00001, offset=10,passes=20)
+            iterations=2000, gamma_threshold=0.00001, offset=50, passes=20)
         lda.save(model)
     else:
         print('Loaded existing LDA model')
@@ -266,7 +273,7 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
     bgc2topic = {}
     if amplif:
         get_index = set(range(0,len(bgcs),amplif))
-        bgc_docs = [(bgcs[i],doc_lda[i]) for i in get_index]
+        bgc_docs = ((bgcs[i],doc_lda[i]) for i in get_index)
     else:
         bgc_docs = zip(bgcs,doc_lda)
     with open(doc_topics,'w') as outf:
@@ -806,7 +813,7 @@ if __name__ == '__main__':
     if not os.path.isdir(cmd.out_folder):
         subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
 
-    bgcs = remove_infr_doms_str(bgcs, 1, False)
+    bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False)
 
     if cmd.amplify:
         bgc_items = []
