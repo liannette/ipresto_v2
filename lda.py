@@ -135,13 +135,13 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
             passes = 100
         lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
             id2word=dict_lda, workers=cores, per_word_topics=True, \
-            iterations=2000, gamma_threshold=0.00001, offset=50, passes=20)
+            iterations=1000, gamma_threshold=0.00001, offset=50, passes=20)
         lda.save(model)
     else:
         print('Loaded existing LDA model')
         lda = LdaMulticore.load(model)
-    cm = CoherenceModel(model=lda, corpus=corpus_bow, dictionary=dict_lda,\
-        coherence='c_v', texts=domlist)
+    # cm = CoherenceModel(model=lda, corpus=corpus_bow, dictionary=dict_lda,\
+        # coherence='c_v', texts=domlist)
     # coherence = cm.get_coherence()
     # print('Coherence: {}, num_topics: {}'.format(coherence, num_topics))
     if ldavis:
