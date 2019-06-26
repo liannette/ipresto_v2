@@ -4,6 +4,11 @@ Author: Joris Louwen
 Script to find modules with LDA algorithm.
 """
 
+import os
+#to account for a weird bug with ldamulticore and numpy:
+#https://github.com/RaRe-Technologies/gensim/issues/1988
+os.environ['OMP_NUM_THREADS'] = '1'
+
 import argparse
 from collections import Counter, defaultdict
 from functools import partial
@@ -15,7 +20,6 @@ from multiprocessing import Pool, cpu_count
 from numpy import sqrt
 import numpy as np
 from operator import itemgetter
-import os
 import pandas as pd
 import scipy.cluster.hierarchy as sch
 import seaborn as sns
@@ -77,6 +81,10 @@ def get_commands():
         are separated by semi-colon.")
     parser.add_argument("--min_genes", help="Minimum length (not counting \
         genes) of a BGC to be included in the analysis",default=1,type=int)
+    parser.add_argument("-I","--iterations",help="Amount of iterations for\
+        training the LDA model, default = 1000",default=1000, type=int)
+    parser.add_argument("-C", "--chunksize",default=2000,type=int,help=\
+        'The chunksize used to train the model, default = 2000')
     return parser.parse_args()
 
 def remove_infr_doms_str(clusdict, m_gens, verbose):
@@ -109,7 +117,7 @@ def remove_infr_doms_str(clusdict, m_gens, verbose):
     return clus_no_deldoms
 
 def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
-    ldavis=True):
+    iters, chnksize, ldavis=True):
     '''
     Returns LDA model with the Dictionary and the corpus, LDAvis is optional
 
@@ -129,13 +137,14 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
     model = os.path.join(outfolder,'lda_model')
     if not os.path.exists(model):
-        #to allow for 1000 iterations of chunksize 2000
-        passes = ceil(1000*2000/len(domlist))
+        #to allow for x iterations of chunksize y
+        passes = ceil(iters*chnksize/len(domlist))
         if passes > 100:
             passes = 100
         lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
             id2word=dict_lda, workers=cores, per_word_topics=True, \
-            iterations=1000, gamma_threshold=0.00001, offset=50, passes=20)
+            chunksize = chnksize, iterations=iters,gamma_threshold=0.0001, \
+            offset=50, passes=passes)
         lda.save(model)
     else:
         print('Loaded existing LDA model')
@@ -267,17 +276,17 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
     '''
     print('\nLinking topics to BGCs')
     #lda[corpus_bow] for unseen documents
-    doc_lda = lda.get_document_topics(corpus_bow,per_word_topics=True)
-    print('  loaded corpus linked to topics')
+    # doc_lda = lda.get_document_topics(corpus_bow,per_word_topics=True)
     doc_topics = os.path.join(outfolder, 'bgc_topics.txt')
     bgc2topic = {}
     if amplif:
         get_index = set(range(0,len(bgcs),amplif))
-        bgc_docs = ((bgcs[i],doc_lda[i]) for i in get_index)
+        bgc_bows = ((bgcs[i],corpus_bow[i]) for i in get_index)
     else:
-        bgc_docs = zip(bgcs,doc_lda)
+        bgc_bows = zip(bgcs,corpus_bow)
     with open(doc_topics,'w') as outf:
-        for bgc, doc_doms in bgc_docs:
+        for bgc, bgc_bow in bgc_bows:
+            doc_doms = lda.get_document_topics(bgc_bow,per_word_topics=True)
             #doc_doms consists of three lists:
             #1 topics 2 word2topic 3 word2topic with probability
             topd = {tpc:[prob,[]] for tpc,prob in doc_doms[0]}
@@ -557,7 +566,8 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
                     if len(g) > 1 or round(g[0][1]) > 1:
                         classes_1.update([bgc_class])
                 except IndexError:
-                    print(topic,p,g,bgc)
+                    #there is a probability for a match to the topic but
+                    #it is so low there are no genes in the match
                     pass
             for count_class,count in classes.items():
                 plotlines.loc[topic,count_class] = count
@@ -798,6 +808,10 @@ if __name__ == '__main__':
 
     print('\nStart')
     cmd = get_commands()
+    print('Parameters: {} topics, {} amplification,'.format(cmd.topics,\
+        cmd.amplify)+'{} iterations of chunksize {}'.format(cmd.iterations,\
+        cmd.chunksize))
+
     bgcs = read2dict(cmd.bgcfile)
     with open(cmd.modfile, 'r') as inf:
         modules = {}
@@ -834,7 +848,7 @@ if __name__ == '__main__':
 
     lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
         num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
-        ldavis=cmd.visualise)
+        iters=cmd.iterations, chnksize=cmd.chunksize, ldavis=cmd.visualise)
     process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num, bgcs,
         cmd.min_feat_score, bgclist, cmd.out_folder, bgc_classes_dict, \
         amplif=cmd.amplify, plot=cmd.plot, known_subcl=known_subclusters)
