@@ -12,6 +12,7 @@ os.environ['OMP_NUM_THREADS'] = '1'
 import argparse
 from collections import Counter, defaultdict
 from functools import partial
+import logging
 from math import ceil
 import matplotlib
 matplotlib.use('Agg') #to not rely on X-forwarding (not available in screen)
@@ -63,7 +64,7 @@ def get_commands():
     parser.add_argument("-a", "--amplify", dest="amplify", help="Amplify \
         the dataset in order to achieve a better LDA model. Each BGC will be\
         present amplify times in the dataset. After calculating the LDA model \
-        the dataset will be scaled back to normal.",type=int, default=0)
+        the dataset will be scaled back to normal.",type=int, default=None)
     parser.add_argument("-v", "--visualise", help="Make a visualation of the\
         LDA model with pyLDAvis (html file). If number of topics is too big\
         this might fail. No visualisation will then be made", default=False,
@@ -85,6 +86,9 @@ def get_commands():
         training the LDA model, default = 1000",default=1000, type=int)
     parser.add_argument("-C", "--chunksize",default=2000,type=int,help=\
         'The chunksize used to train the model, default = 2000')
+    parser.add_argument("-u","--update",help="If provided and a model already\
+        exists, the existing model will be updated with specified parameters",
+        default=False, action="store_true")
     return parser.parse_args()
 
 def remove_infr_doms_str(clusdict, m_gens, verbose):
@@ -117,7 +121,7 @@ def remove_infr_doms_str(clusdict, m_gens, verbose):
     return clus_no_deldoms
 
 def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
-    iters, chnksize, ldavis=True):
+    iters, chnksize, update_model=False, ldavis=True):
     '''
     Returns LDA model with the Dictionary and the corpus, LDAvis is optional
 
@@ -133,22 +137,35 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     '''
     dict_lda = Dictionary(domlist)
     dict_lda.filter_extremes(no_below=no_below, no_above=no_above)
-    print('\nConstructing LDA model with:', dict_lda)
+    print('\nConstructing LDA model with {} BGCs and:'.format(len(domlist)),\
+        dict_lda)
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
     model = os.path.join(outfolder,'lda_model')
+    #to allow for x iterations of chunksize y
+    passes = ceil(iters*chnksize/len(domlist))
+    if passes > 100:
+        passes = 100
+    offst = 50
+    if chnksize > 5000:
+        offst = 1
+    if iters <= 10:
+        offst = 1
     if not os.path.exists(model):
-        #to allow for x iterations of chunksize y
-        passes = ceil(iters*chnksize/len(domlist))
-        if passes > 100:
-            passes = 100
         lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
             id2word=dict_lda, workers=cores, per_word_topics=True, \
             chunksize = chnksize, iterations=iters,gamma_threshold=0.0001, \
-            offset=50, passes=passes)
+            offset=offst, passes=passes, dtype=np.float64)
         lda.save(model)
     else:
         print('Loaded existing LDA model')
         lda = LdaMulticore.load(model)
+        if update_model:
+            #update the model. to be functional the input should be stationary
+            #(no topic drift in new documents)
+            print("Existing model is updated")
+            lda.update(corpus=corpus_bow,chunksize=chnksize,iterations=iters,\
+                gamma_threshold=0.0001, offset=offst, passes=passes)
+            lda.save(model)
     # cm = CoherenceModel(model=lda, corpus=corpus_bow, dictionary=dict_lda,\
         # coherence='c_v', texts=domlist)
     # coherence = cm.get_coherence()
@@ -162,8 +179,8 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     return lda, dict_lda, corpus_bow
 
 def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
-    min_f_score, bgcs, outfolder, bgc_classes, amplif=False, min_t_match=0.1,\
-    min_feat_match=0.3, plot=True, known_subcl=False):
+    min_f_score, bgcs, outfolder, bgc_classes, num_topics, amplif=False,\
+    min_t_match=0.1, min_feat_match=0.3, plot=True, known_subcl=False):
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
@@ -183,6 +200,8 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
         trans = {x:'-' for x in range(topic_num)}
     filt_features,zero_topics = select_number_of_features(lda_topics,\
         outfolder,min_f_score,feat_num,trans)
+    if len(zero_topics) == num_topics:
+        raise SystemExit("All topics are empty.")
     bgcl_dict = {bgc: sum(1 for g in genes if not g == '-') \
         for bgc,genes in bgc_dict.items()}
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
@@ -808,9 +827,19 @@ if __name__ == '__main__':
 
     print('\nStart')
     cmd = get_commands()
-    print('Parameters: {} topics, {} amplification,'.format(cmd.topics,\
+    if not os.path.isdir(cmd.out_folder):
+        subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
+    print('Parameters: {} topics, {} amplification, '.format(cmd.topics,\
         cmd.amplify)+'{} iterations of chunksize {}'.format(cmd.iterations,\
         cmd.chunksize))
+    #writing log information to log.txt
+    log_out = os.path.join(cmd.out_folder,'log.txt')
+    with open(log_out,'w') as outf:
+        for arg in argv:
+            outf.write(arg+'\n')
+    logging.basicConfig(filename=log_out,
+        format="%(asctime)s:%(levelname)s:%(message)s",
+        level=logging.INFO)
 
     bgcs = read2dict(cmd.bgcfile)
     with open(cmd.modfile, 'r') as inf:
@@ -824,18 +853,15 @@ if __name__ == '__main__':
         bgc_classes_dict = read2dict(cmd.classes, sep='\t',header=True)
     else:
         bgc_classes_dict = {bgc:'None' for bgc in bgcs}
-    if not os.path.isdir(cmd.out_folder):
-        subprocess.check_call('mkdir {}'.format(cmd.out_folder), shell=True)
 
     bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False)
-
     if cmd.amplify:
         bgc_items = []
         for bgc in bgcs.items():
             bgc_items += [bgc]*cmd.amplify
-        bgclist, domlist = zip(*bgc_items)
+        bgclist, dom_list = zip(*bgc_items)
     else:
-        bgclist, domlist = zip(*bgcs.items())
+        bgclist, dom_list = zip(*bgcs.items())
 
     if cmd.known_subclusters:
         known_subclusters = defaultdict(list)
@@ -846,12 +872,14 @@ if __name__ == '__main__':
     else:
         known_subclusters = False
 
-    lda, lda_dict, bow_corpus = run_lda(domlist, no_below=1, no_above=0.5, \
+    lda, lda_dict, bow_corpus = run_lda(dom_list, no_below=1, no_above=0.5, \
         num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
-        iters=cmd.iterations, chnksize=cmd.chunksize, ldavis=cmd.visualise)
+        iters=cmd.iterations, chnksize=cmd.chunksize,update_model=cmd.update,\
+        ldavis=cmd.visualise)
     process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num, bgcs,
         cmd.min_feat_score, bgclist, cmd.out_folder, bgc_classes_dict, \
-        amplif=cmd.amplify, plot=cmd.plot, known_subcl=known_subclusters)
+        num_topics=cmd.topics, amplif=cmd.amplify, plot=cmd.plot, \
+        known_subcl=known_subclusters)
 
     end = time.time()
     t = end-start
