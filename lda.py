@@ -163,8 +163,9 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
             #update the model. to be functional the input should be stationary
             #(no topic drift in new documents)
             print("Existing model is updated")
-            lda.update(corpus=corpus_bow,chunksize=chnksize,iterations=iters,\
-                gamma_threshold=0.0001, offset=offst, passes=passes)
+            #for the multicore model new parameters cannot be added, the
+            #parameters from the existing model will be used to update
+            lda.update(corpus_bow, chunks_as_numpy=True)
             lda.save(model)
     # cm = CoherenceModel(model=lda, corpus=corpus_bow, dictionary=dict_lda,\
         # coherence='c_v', texts=domlist)
@@ -834,7 +835,7 @@ if __name__ == '__main__':
         cmd.chunksize))
     #writing log information to log.txt
     log_out = os.path.join(cmd.out_folder,'log.txt')
-    with open(log_out,'w') as outf:
+    with open(log_out,'a') as outf:
         for arg in argv:
             outf.write(arg+'\n')
     logging.basicConfig(filename=log_out,
