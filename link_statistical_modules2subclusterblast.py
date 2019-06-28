@@ -72,7 +72,10 @@ def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
                         break
     print('There are {} known sub_clusters with at least one'.format(xs[0])+
         ' overlap of two genes with a minimum overlap % of {}'.format(ys[0]))
-    plt.plot(ys, xs)
+    print(ys,xs)
+    fig,ax = plt.subplots()
+    line = ax.plot(ys,xs)
+    ax.set_ylim(0,len(known_subcl_matches))
     plt.xlabel('Overlap threshold')
     plt.ylabel('Characterised subclusters with an overlap')
     plt.title(\
@@ -167,26 +170,6 @@ def write_stat_method_overlap(match_dict, known_subcl, cutoff, outfile):
                     for bgc_class in bgc_list:
                         outf.write('\t{}\n'.format(bgc_class))
 
-
-# with open(subcl_out,'w') as outf:
-            # #sort the subclusters alphabetically on first info element
-            # outf.write('##Values below each subcluster: %overlap len_overlap'+
-                # ' bgc class topic topic_probability overlap_genes'+
-                # ' non_overlap_genes\n')
-            # for bgc, info in sorted(known_subcl.items(),\
-                # key=lambda x: x[1][0][0]):
-                # for k_subclust in info:
-                    # outf.write('#{}\t{}\n'.format(bgc,'\t'.join(map(str,\
-                        # k_subclust))))
-                    # overlap_list = known_subcl_matches[k_subclust[0]]
-                    # #give summary per topic?
-                    # #e.g. #topic x: 12 avg_overlap: 0.403 
-                    # #sort from high to low overlap,topic,bgc
-                    # for m_overlap in sorted(overlap_list, key=lambda x: \
-                        # (-x[0],x[4],x[2])):
-                        # #overlap bgc class topic prob genes:prob
-                        # outf.write('{}\n'.format('\t'.join(\
-                            # map(str,m_overlap))))
 
 if __name__ == '__main__':
     start = time.time()
