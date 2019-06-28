@@ -143,13 +143,8 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     model = os.path.join(outfolder,'lda_model')
     #to allow for x iterations of chunksize y
     passes = ceil(iters*chnksize/len(domlist))
-    if passes > 100:
-        passes = 100
-    offst = 50
-    if chnksize > 5000:
-        offst = 1
-    if iters <= 10:
-        offst = 1
+    #offset and gamma_threshold based on Blei et al. 2010
+    offst = 1
     if not os.path.exists(model):
         lda = LdaMulticore(corpus=corpus_bow, num_topics=num_topics, \
             id2word=dict_lda, workers=cores, per_word_topics=True, \
