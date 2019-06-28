@@ -36,7 +36,7 @@ domain_contour_thickness = 1
 gene_contour_thickness = 2 # thickness grows outwards
 stripe_thickness = 3
 
-domains_color_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "domains_color_file.tsv")
+# domains_color_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "domains_color_file.tsv")
 
 
 # read various color data
@@ -63,7 +63,7 @@ def read_color_genes_file():
     return color_genes
 
 
-def read_color_domains_file():
+def read_color_domains_file(domains_color_file):
     # Try to read colors for domains
     color_domains = {}
     
@@ -364,7 +364,7 @@ def new_color(gene_or_domain):
     return [r, g, b]
 
 
-def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_genes, color_domains, pfam_domain_categories, pfam_info, loci, max_width, H=30, h=15, l=30, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
+def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_genes, color_domains, pfam_domain_categories, pfam_info, loci, max_width, domains_color_file, H=30, h=15, l=30, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
     '''
     Create the main SVG document:
         - read pfd file with domain information (pfdFile contains complete path)
@@ -468,40 +468,45 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
     if use_pfd:
         identifiers = defaultdict(list)
         with open(pfdFile, "r") as pfd_handle:
+            pfd_handle.readline() #header
             for line in pfd_handle:
                 row = line.strip().split("\t")
-                
+
                 # use to access to parent's properties
-                identifier = row[9].replace("<","").replace(">","")
+                # identifier = row[9].replace("<","").replace(">","")
                 # if it's the new version of pfd file, we can take the last part 
                 #  to make it equal to the identifiers used in gene_list. Strand
                 #  is recorded in parent gene anyway
-                if ":strand:+" in identifier:
-                    identifier = identifier.replace(":strand:+", "")
-                    strand = "+"
-                if ":strand:-" in identifier:
-                    identifier = identifier.replace(":strand:-", "")
-                    strand = "-"
-                
+                # if ":strand:+" in identifier:
+                    # identifier = identifier.replace(":strand:+", "")
+                    # strand = "+"
+                # if ":strand:-" in identifier:
+                    # identifier = identifier.replace(":strand:-", "")
+                    # strand = "-"
+                #get strand
+                loc = row[3].replace("<","").replace(">","")
+                g_start,g_end,strand = loc.split(';')
 
-                width = 3*(int(row[4]) - int(row[3]))
-                            
+                #get start and end of pfam
+                pf_start,pf_end = row[-2].split(';')
+                width = 3*(int(pf_end) - int(pf_start))
+
                 if strand == "+":
                     # multiply by 3 because the env. coordinate is in aminoacids, not in bp
                     # This start is relative to the start of the gene
-                    start = 3*int(row[3])
+                    start = 3*int(pf_start)
                 else:
-                    loci_start = int(row[7].replace("<","").replace(">",""))
-                    loci_end = int(row[8].replace("<","").replace(">",""))
+                    loci_start = int(g_start)
+                    loci_end = int(g_end)
                                     
-                    start = loci_end - loci_start - 3*int(row[3]) - width
+                    start = loci_end - loci_start - 3*int(pf_start) - width
                 
                 # geometry
                 start = int(start/scaling)
                 width = int(width/scaling)
 
-                # accession
-                domain_acc = row[5].split(".")[0]
+                # accession -> this is now id
+                domain_acc = row[6]
                 
                 # colors
                 try:
@@ -517,7 +522,9 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
 
 
                 # [X, L, H, domain_acc, color, color_contour]
-                identifiers[identifier].append([start, width, int(H - 2*internal_domain_margin), domain_acc, pfam_info[domain_acc], color, color_contour])
+                identifier = row[0]+row[4]
+                desc = pfam_info.get(domain_acc,('',''))
+                identifiers[identifier].append([start, width, int(H - 2*internal_domain_margin), domain_acc, desc, color, color_contour])
     
     loci = 0
     feature_counter = 1
@@ -537,7 +544,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
         SVG_TEXT += additional_tabs + "\t" + line
         
         # Calculate features for all arrows
-        
+        cds_num=1
         for feature in [feature for feature in seq_record.features if feature.location.start >= absolute_start and feature.location.end <= absolute_end]:
             if feature.type == 'CDS':
                 # Get name
@@ -627,7 +634,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
                 #if has_regulator and not (has_core or has_otherbio or has_transporter):
                     #gene_category = "filter=\"url(#shadow_Regulator)\""
                         
-                
+                identifier = BGCname+str(cds_num)
                 #X, Y, L, l, H, h, strand, color, color_contour, category, gid, domain_list
                 arrow = draw_arrow(additional_tabs, start+mX, add_origin_Y+mY+h, int(feature.location.end-feature.location.start)/scaling, l, H, h, strand, color, color_contour, gene_category, cds_tag, identifiers[identifier])
                 if arrow == "":
@@ -635,7 +642,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
                 SVG_TEXT += arrow
                 
                 feature_counter += 1
-                
+                cds_num += 1
         loci += 1
         
         SVG_TEXT += additional_tabs + "</g>\n"
@@ -673,5 +680,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
 
 if __name__ == '__main__':
     filename = sys.argv[1]
+    domains_colour_file_path = sys.argv[2]
+    dom_hits_file = sys.argv[3]
     bgc = os.path.split(filename)[1].split('.gbk')[0]
-    SVG(True, '../test_html_{}.html'.format(bgc),filename,bgc,None,None,None,{},{},{},-1,None)
+    domain_colours = read_color_domains_file(domains_colour_file_path)
+    SVG(False, '../test_html_{}.svg'.format(bgc),filename,bgc,dom_hits_file,True,{},domain_colours,{},{},-1,None,domains_colour_file_path)
