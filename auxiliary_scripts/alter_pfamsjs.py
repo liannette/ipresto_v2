@@ -63,10 +63,51 @@ def process_pfamjs(pfam_file, out_file, acc2name, sub_count):
     '''
     '''
     #copy whole file to out_file but wihout the var pfams= so it is a json
+    jsonfile = out_file+'.json'
+    with open(pfam_file,'r') as inf, open(jsonfile,'w') as outf:
+        first = inf.readline()
+        first = first.split('var pfams=')[-1]
+        whole_file = [first]+inf.readlines()
+        print(whole_file[-1])
+        whole_file[-1] = whole_file[-1].strip(';\n')
+        for line in whole_file:
+            outf.write(line)
+    with open(jsonfile,'r') as inf:
+        pfam_js = json.load(inf)
+    pfam_id_js={}
+    for pfam,vals in pfam_js.items():
+        try:
+            pfam_id = acc2name[pfam]
+        except KeyError:
+            print(pfam,'does not have a match and is excluded')
+        else:
+            if pfam_id in sub_count:
+                count = sub_count[pfam_id]
+                for i in range(1,count+1):
+                    subpfam = pfam_id + '_c' + str(i)
+                    pfam_id_js[subpfam] = vals
+            else:
+                pfam_id_js[pfam_id] = vals
+    with open(out_file,'w') as outf:
+        outf.write('var pfams=')
+        json.dump(pfam_id_js,outf)
+        outf.write(';')
+    with open(jsonfile,'w') as outf:
+        json.dump(pfam_id_js,outf)
+
+def read_sub_count(sub_count_file):
+    '''reads file pfam_id\tcount to {pfam_id:count}
+    '''
+    sub_dict = {}
+    with open(sub_count_file,'r') as inf:
+        for line in inf:
+            line = line.strip().split('\t')
+            sub_dict[line[0]] = int(line[1])
+    return sub_dict
 
 if __name__ == "__main__":
     cmd = get_commands()
 
-    # acc_to_name = parse_hmm(cmd.hmm)
-    # print(acc_to_name,len(acc_to_name))
-    read_pfamjs(cmd.in_file,cmd.out_file,{},{})
+    acc_to_name = parse_hmm(cmd.hmm)
+    sub_counts = read_sub_count(cmd.sub_count)
+    process_pfamjs(cmd.in_file,cmd.out_file,acc_to_name,sub_counts)

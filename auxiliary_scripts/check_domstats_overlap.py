@@ -6,6 +6,7 @@ Script to find the differences between two domstats files
 
 from sys import argv
 import re
+from collections import defaultdict
 
 def read_f(filepath):
     '''reads file in a dict {line[0]:line[1]}
@@ -36,8 +37,9 @@ if __name__ == '__main__':
             len(dif)))
         for key,val in sorted(dif.items(), key=lambda x: x[1],reverse=True):
             outf.write('{}\t{}\n'.format(key,val))
+    unlist_comp = {d for dom in comp for d in dom.split(';')}
     dif_ecdm = {}
-    dif_ecdm_list = set()
+    dif_ecdm_list = defaultdict(int)
     for dom in dif:
         no_ecdm = False
         doml = dom.split(';')
@@ -46,11 +48,14 @@ if __name__ == '__main__':
             if m:
                 if d[:m.start()] not in ecdm:
                     no_ecdm = True
-                    dif_ecdm_list.add(d)
+                    if d not in unlist_comp:
+                        #add all counts
+                        dif_ecdm_list[d]+=dif[dom]
             else:
                 if d not in ecdm:
                     no_ecdm = True
-                    dif_ecdm_list.add(d)
+                    if d not in unlist_comp:
+                        dif_ecdm_list[d]+=int(dif[dom])
         if no_ecdm:
             dif_ecdm[dom] = dif[dom]
     # print(sorted(dif_ecdm.items(),key=lambda x: x[1]),len(dif),len(dif_ecdm))
@@ -60,6 +65,6 @@ if __name__ == '__main__':
         for key,val in sorted(dif_ecdm.items(), key=lambda x: x[1],\
             reverse=True):
             outf.write('{}\t{}\n'.format(key,val))
-    for dom in sorted(dif_ecdm_list):
-        print(dom)
+    for dm,c in sorted(dif_ecdm_list.items(),key=lambda x: x[1],reverse=True):
+        print(dm+'\t'+str(c))
     print(len(dif_ecdm_list))
