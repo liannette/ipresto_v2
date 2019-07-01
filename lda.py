@@ -544,14 +544,14 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
                 if overlap > cutoff and len(k_list) > 1:
                     match_overl_genes = [(g,p,) for g,p in\
                         g_list if g in overl_d_set]
-                    overl_d = ','.join(sorted([g+':'+str(p) for g,p in\
-                        match_overl_genes]))
-                    non_overl_d = ','.join(sorted([g+':'+str(p) for g,p in\
-                        g_list if not g in overl_d_set]))
+                    overl_d = ','.join(sorted(['{}:{:.2f}'.format(g,p) for \
+                        g,p in match_overl_genes]))
+                    non_overl_d = ','.join(sorted(['{}:{:.2f}'.format(g,p) \
+                        for g,p in g_list if not g in overl_d_set]))
 
                     matches_overlap.append([k_sub[0],round(overlap,3),\
-                        l_overlap,bgc,bgc_class,match[0],match[1],overl_d,\
-                        non_overl_d])
+                        l_overlap,bgc,bgc_class,match[0],round(match[1],4),\
+                        overl_d, non_overl_d])
     return matches_overlap
 
 def write_topic_matches(topic_matches, bgc_classes, outname,plot):
@@ -562,6 +562,7 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
     outname: str, filepath
     '''
     print('\nWriting filtered matches to {}'.format(outname))
+    #a set of bgc classes
     s_b_c = set([v for vals in bgc_classes.values() for v in vals])
     s_b_c.add('None')
     plotlines = pd.DataFrame(columns=sorted(s_b_c))
