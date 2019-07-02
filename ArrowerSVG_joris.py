@@ -364,7 +364,7 @@ def new_color(gene_or_domain):
     return [r, g, b]
 
 
-def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_genes, color_domains, pfam_domain_categories, pfam_info, loci, max_width, domains_color_file, H=30, h=15, l=30, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
+def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, color_genes, color_domains, pfam_domain_categories, pfam_info, loci, max_width, domains_color_file, new_color_domains, H=30, h=15, l=30, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
     '''
     Create the main SVG document:
         - read pfd file with domain information (pfdFile contains complete path)
@@ -375,14 +375,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
     
     # for colors not found in colors_genes and color_domains, we need to generate them from scratch
     new_color_genes = {}
-    new_color_domains = {}
     
     SVG_TEXT = "" # here we keep all the text that will be written down as a file
-    
-    # check whether we have a corresponding pfd file wih domain annotations
-    if use_pfd:
-        if not os.path.isfile(pfdFile):
-            sys.exit("Error (Arrower): " + pfdFile + " not found")
    
 
     # --- create SVG header. We have to get max_width first
@@ -464,67 +458,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
 
     # --- read in GenBank file
 
-    # handle domains
-    if use_pfd:
-        identifiers = defaultdict(list)
-        with open(pfdFile, "r") as pfd_handle:
-            pfd_handle.readline() #header
-            for line in pfd_handle:
-                row = line.strip().split("\t")
-
-                # use to access to parent's properties
-                # identifier = row[9].replace("<","").replace(">","")
-                # if it's the new version of pfd file, we can take the last part 
-                #  to make it equal to the identifiers used in gene_list. Strand
-                #  is recorded in parent gene anyway
-                # if ":strand:+" in identifier:
-                    # identifier = identifier.replace(":strand:+", "")
-                    # strand = "+"
-                # if ":strand:-" in identifier:
-                    # identifier = identifier.replace(":strand:-", "")
-                    # strand = "-"
-                #get strand
-                loc = row[3].replace("<","").replace(">","")
-                g_start,g_end,strand = loc.split(';')
-
-                #get start and end of pfam
-                pf_start,pf_end = row[-2].split(';')
-                width = 3*(int(pf_end) - int(pf_start))
-
-                if strand == "+":
-                    # multiply by 3 because the env. coordinate is in aminoacids, not in bp
-                    # This start is relative to the start of the gene
-                    start = 3*int(pf_start)
-                else:
-                    loci_start = int(g_start)
-                    loci_end = int(g_end)
-                                    
-                    start = loci_end - loci_start - 3*int(pf_start) - width
-                
-                # geometry
-                start = int(start/scaling)
-                width = int(width/scaling)
-
-                # accession -> this is now id
-                domain_acc = row[6]
-                
-                # colors
-                try:
-                    color = color_domains[domain_acc]
-                except KeyError:
-                    color = new_color("domain")
-                    new_color_domains[domain_acc] = color
-                    color_domains[domain_acc] = color
-                    pass
-                # contour color is a bit darker. We go to h,s,v space for that
-                h_, s, v = rgb_to_hsv(float(color[0])/255.0, float(color[1])/255.0, float(color[2])/255.0)
-                color_contour = tuple(int(c * 255) for c in hsv_to_rgb(h_, s, 0.8*v))
-
-
-                # [X, L, H, domain_acc, color, color_contour]
-                identifier = row[0]+row[4]
-                desc = pfam_info.get(domain_acc,('',''))
-                identifiers[identifier].append([start, width, int(H - 2*internal_domain_margin), domain_acc, desc, color, color_contour])
+    # handle domains    
     
     loci = 0
     feature_counter = 1
@@ -678,10 +612,91 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, pfdFile, use_pfd, color_ge
     with open(outputfile, mode) as handle:
         handle.write(SVG_TEXT)
 
+def read_dom_hits(dom_hits_file,color_domains,pfam_info,scaling=30,H=30):
+    '''
+    '''
+    print('\nReading dom_hits file')
+    if not os.path.isfile(dom_hits_file):
+        sys.exit("Error (Arrower): " + dom_hits_file + " not found")
+    new_color_domains = {}
+    identifiers = defaultdict(list)
+    with open(dom_hits_file, "r") as pfd_handle:
+        pfd_handle.readline() #header
+        for line in pfd_handle:
+            row = line.strip('\n').split("\t")
+
+            # use to access to parent's properties
+            # identifier = row[9].replace("<","").replace(">","")
+            # if it's the new version of pfd file, we can take the last part 
+            #  to make it equal to the identifiers used in gene_list. Strand
+            #  is recorded in parent gene anyway
+            # if ":strand:+" in identifier:
+                # identifier = identifier.replace(":strand:+", "")
+                # strand = "+"
+            # if ":strand:-" in identifier:
+                # identifier = identifier.replace(":strand:-", "")
+                # strand = "-"
+            #get strand
+            loc = row[3].replace("<","").replace(">","")
+            g_start,g_end,strand = loc.split(';')
+
+            #get start and end of pfam
+            pf_start,pf_end = row[-2].split(';')
+            width = 3*(int(pf_end) - int(pf_start))
+
+            if strand == "+":
+                # multiply by 3 because the env. coordinate is in aminoacids, not in bp
+                # This start is relative to the start of the gene
+                start = 3*int(pf_start)
+            else:
+                loci_start = int(g_start)
+                loci_end = int(g_end)
+                                
+                start = loci_end - loci_start - 3*int(pf_start) - width
+            
+            # geometry
+            start = int(start/scaling)
+            width = int(width/scaling)
+
+            # accession -> this is now id
+            domain_acc = row[6]
+            
+            # colors
+            try:
+                color = color_domains[domain_acc]
+            except KeyError:
+                color = new_color("domain")
+                new_color_domains[domain_acc] = color
+                color_domains[domain_acc] = color
+                pass
+            # contour color is a bit darker. We go to h,s,v space for that
+            h_, s, v = rgb_to_hsv(float(color[0])/255.0, float(color[1])/255.0, float(color[2])/255.0)
+            color_contour = tuple(int(c * 255) for c in hsv_to_rgb(h_, s, 0.8*v))
+
+
+            # [X, L, H, domain_acc, color, color_contour]
+            identifier = row[0]+row[4]
+            desc = pfam_info.get(domain_acc,('',''))
+            identifiers[identifier].append([start, width, int(H - 2*internal_domain_margin), domain_acc, desc, color, color_contour])
+    print('  read domains')
+    return identifiers,new_color_domains
+
 if __name__ == '__main__':
-    filename = sys.argv[1]
+    filenames = sys.argv[1] #file with list of BGC gbk files to plot
     domains_colour_file_path = sys.argv[2]
     dom_hits_file = sys.argv[3]
-    bgc = os.path.split(filename)[1].split('.gbk')[0]
+    outfile = sys.argv[4]
+
+    with open(outfile,'w') as outf:
+        pass #clear outfile
+    with open(filenames,'r') as inf:
+        files = [line.strip() for line in inf]
+    files.reverse()
     domain_colours = read_color_domains_file(domains_colour_file_path)
-    SVG(False, '../test_html_{}.svg'.format(bgc),filename,bgc,dom_hits_file,True,{},domain_colours,{},{},-1,None,domains_colour_file_path)
+    pfam_info = {}
+    dom_hits,new_colour_doms = read_dom_hits(dom_hits_file,domain_colours,\
+        pfam_info)
+    for filename in files:
+        print(filename)
+        bgc = os.path.split(filename)[1].split('.gbk')[0]
+        SVG(True, outfile,filename,bgc,dom_hits,{},domain_colours,{},pfam_info,-1,None,domains_colour_file_path,new_colour_doms)
