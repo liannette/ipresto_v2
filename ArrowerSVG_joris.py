@@ -25,6 +25,7 @@ from colorsys import hsv_to_rgb
 from colorsys import rgb_to_hsv
 from math import sin, atan2, pi
 from collections import defaultdict
+from itertools import groupby
 
 global internal_domain_margin
 global gene_contour_thickness
@@ -364,7 +365,10 @@ def new_color(gene_or_domain):
     return [r, g, b]
 
 
-def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, color_genes, color_domains, pfam_domain_categories, pfam_info, loci, max_width, domains_color_file, new_color_domains, H=30, h=15, l=30, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
+def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
+    color_genes, color_domains, pfam_domain_categories, pfam_info, loci,\
+    max_width, domains_color_file, new_color_domains, module_list=None, H=30,\
+    h=5, l=12, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
     '''
     Create the main SVG document:
         - read pfd file with domain information (pfdFile contains complete path)
@@ -405,7 +409,14 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, color_genes, 
     max_width /= scaling
             
     if write_html:
-        header = "\t\t<div title=\"" + BGCname + "\">\n"
+        if module_list:
+            mod_info = 'Topic {}, probability {}'.format(module_list[0],\
+                module_list[1])
+            header = "<div><h2>{}</h2></div>\n".format(mod_info)
+            header += "\t\t<div title=\"" + mod_info + "\">\n"
+        else:
+            header = "<div><h1>{}</h1></div>\n".format(BGCname)
+            header += "\t\t<div title=\"" + BGCname + "\">\n"
         additional_tabs = "\t\t\t"
         
         header += "{}<svg width=\"{}\" height=\"{}\">\n".format(additional_tabs, str(max_width + 2*(mX)), str(loci*(2*h + H + 2*mY)))
@@ -570,10 +581,18 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, color_genes, 
                         
                 identifier = BGCname+str(cds_num)
                 #X, Y, L, l, H, h, strand, color, color_contour, category, gid, domain_list
-                arrow = draw_arrow(additional_tabs, start+mX, add_origin_Y+mY+h, int(feature.location.end-feature.location.start)/scaling, l, H, h, strand, color, color_contour, gene_category, cds_tag, identifiers[identifier])
-                if arrow == "":
-                    print("  (ArrowerSVG) Warning: something went wrong with {}".format(BGCname))
-                SVG_TEXT += arrow
+                domain_list = identifiers[identifier]
+                should_draw_arrow = True
+                if module_list:
+                    domains_in_gene = ';'.join([info[3] for info in \
+                        domain_list])
+                    if not domains_in_gene in module_list[-1]:
+                        should_draw_arrow = False
+                if should_draw_arrow:
+                    arrow = draw_arrow(additional_tabs, start+mX, add_origin_Y+mY+h, int(feature.location.end-feature.location.start)/scaling, l, H, h, strand, color, color_contour, gene_category, cds_tag, domain_list)
+                    if arrow == "":
+                        print("  (ArrowerSVG) Warning: something went wrong with {}".format(BGCname))
+                    SVG_TEXT += arrow
                 
                 feature_counter += 1
                 cds_num += 1
@@ -613,7 +632,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, color_genes, 
         handle.write(SVG_TEXT)
 
 def read_dom_hits(dom_hits_file,color_domains,pfam_info,scaling=30,H=30):
-    '''
+    '''Returns dict of {gene_identifier:[[domain_info]]}
     '''
     print('\nReading dom_hits file')
     if not os.path.isfile(dom_hits_file):
@@ -681,12 +700,42 @@ def read_dom_hits(dom_hits_file,color_domains,pfam_info,scaling=30,H=30):
     print('  read domains')
     return identifiers,new_color_domains
 
+def read_modules(filename):
+    '''Returns dict of {bgc_name:[[info,module_tuple]]}
+    '''
+    mod_dict = defaultdict(list)
+    print('\nReading modules')
+    with open(filename,'r') as inf:
+        header = '' #just in case
+        for boolval, lines in groupby(inf, lambda line: line[0] == '>'):
+            if boolval:
+                header = next(lines).strip()[1:]
+            elif not boolval:
+                for mod in lines:
+                    if not mod.startswith('cl') and not mod.startswith('kn'):
+                        mod = mod.strip().split('\t')
+                        mod_tup = tuple([m.split(':')[0] for m in \
+                            mod[-1].split(',')])
+                        mod_list = mod[:-1] + [mod_tup]
+                        mod_dict[header].append(mod_list)
+    return mod_dict
+
 if __name__ == '__main__':
     filenames = sys.argv[1] #file with list of BGC gbk files to plot
     domains_colour_file_path = sys.argv[2]
     dom_hits_file = sys.argv[3]
     outfile = sys.argv[4]
+    if len(sys.argv) >= 6:
+        modsfile = sys.argv[5]
+        modules = read_modules(modsfile)
+    else:
+        modules = False
+    if len(sys.argv) == 7:
+        topic_include = sys.argv[6]
+    else:
+        topic_include = False
 
+    print(topic_include,topic_include=='842')
     with open(outfile,'w') as outf:
         pass #clear outfile
     with open(filenames,'r') as inf:
@@ -696,7 +745,20 @@ if __name__ == '__main__':
     pfam_info = {}
     dom_hits,new_colour_doms = read_dom_hits(dom_hits_file,domain_colours,\
         pfam_info)
+
     for filename in files:
         print(filename)
         bgc = os.path.split(filename)[1].split('.gbk')[0]
-        SVG(True, outfile,filename,bgc,dom_hits,{},domain_colours,{},pfam_info,-1,None,domains_colour_file_path,new_colour_doms)
+        SVG(True, outfile,filename,bgc,dom_hits,{},domain_colours,{},\
+            pfam_info,-1,None,domains_colour_file_path,new_colour_doms)
+        if modules:
+            for module in modules[bgc]:
+                plot=True
+                if topic_include:
+                    print(module[0])
+                    if not module[0] == topic_include:
+                        plot=False
+                if plot:
+                    SVG(True, outfile,filename,bgc,dom_hits,{},domain_colours,{},\
+                        pfam_info,-1,None,domains_colour_file_path,new_colour_doms,
+                        module_list=module)
