@@ -252,7 +252,7 @@ def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
     filt_features = {}
     zero_topics = []
     with open(out_topics,'w') as outf:
-        outf.write('Topic\tNumber_LDAvis\tSelected_domains\t'+\
+        outf.write('Topic\tNumber_LDAvis\tTopic_length\tSelected_domains\t'+\
             'Domain_combinations\tScores\n')
         for top, mod in lda_topics:
             nums = []
@@ -277,8 +277,8 @@ def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
             filt_features[top] = set(doms[:sel])
             select_features = ','.join(a+':'+str(b) for a,b in \
                 zip(doms[:sel],nums[:sel]))
-            outf.write('{}\t{}\t{}\t{}\t{}\n'.format(top,trans[top],\
-                select_features,','.join(doms),','.join(map(str,nums))))
+            outf.write('{}\t{}\t{}\t{}\t{}\t{}\n'.format(top,trans[top],\
+                sel,select_features,','.join(doms),','.join(map(str,nums))))
     print('  {} empty topics'.format(len(zero_topics)))
     return(filt_features,zero_topics)
 
@@ -603,13 +603,14 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
                 sorted_matches = sorted(matches,key=lambda x: \
                     (len(x[1]),list(zip(*x[1]))[0]))
             except IndexError:
-                pass
+                pass #there is no match same as above
             else:
                 topic_matches[topic] = sorted_matches
                 for match in sorted_matches:
-                    outf.write('{:.3f}\t{}\t{}\t{}\n'.format(match[0], ','.join(\
-                    ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]]),\
-                    match[2],bgc_classes.get(match[2],['None'])[0]))
+                    outf.write('{:.3f}\t{}\t{}\t{}\n'.format(match[0], \
+                        ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in \
+                        match[1]]), match[2],\
+                        bgc_classes.get(match[2],['None'])[0]))
     if plot:
         bplot_name = os.path.join(os.path.split(outname)[0],'topic_stats.pdf')
         barplot_topic_stats(plotlines,bplot_name)
