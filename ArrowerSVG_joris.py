@@ -44,7 +44,7 @@ def get_commands():
         their modules found with the statistical method and with LDA.")
     parser.add_argument("-f","--filenames",help="A file that contains paths to\
         gbk files of BGCs that will be plot", required=True)
-    parser.add_argument("-c", "--domains_colours_file",help='A tsv file that\
+    parser.add_argument("-c", "--domains_colour_file",help='A tsv file that\
         contains domain_id\tr,g,b on each line. Must be specified, but can be\
         an empty file in which domain colours will be added')
     parser.add_argument('-d','--dom_hits_file',help='A file in which Pfam\
@@ -93,7 +93,7 @@ def read_color_domains_file(domains_color_file):
     color_domains = {}
     
     if os.path.isfile(domains_color_file):
-        print("  Found file with domains colors")
+        print("\nFound file with domains colors")
         with open(domains_color_file, "r") as color_domains_handle:
             for line in color_domains_handle:
                 # handle comments and empty lines
