@@ -39,6 +39,30 @@ stripe_thickness = 3
 
 # domains_color_file = os.path.join(os.path.dirname(os.path.realpath(__file__)), "domains_color_file.tsv")
 
+def get_commands():
+    parser = argparse.ArgumentParser(description="A script visualise BGCs and\
+        their modules found with the statistical method and with LDA.")
+    parser.add_argument("-f","--filenames",help="A file that contains paths to\
+        gbk files of BGCs that will be plot", required=True)
+    parser.add_argument("-c", "--domains_colours_file",help='A tsv file that\
+        contains domain_id\tr,g,b on each line. Must be specified, but can be\
+        an empty file in which domain colours will be added')
+    parser.add_argument('-d','--dom_hits_file',help='A file in which Pfam\
+        domains are linked to genes: bgc\tg_id\tp_id\tlocation\torf_num\t\
+        tot_orf\tdomain\tq_range\tbitscore, location as start;end;strand \
+        qrange as start;end')
+    parser.add_argument('-o','--outfile',help='Outfile filepath')
+    parser.add_argument('-l','--modules_lda',help='A file with matches to\
+        topics originating from the LDA algorithm, optional.',default=False)
+    parser.add_argument('-t','--topic_include', help='If specified, only this\
+        one or more topics will be included in the visualisation',\
+        default=False, nargs="+")
+    parser.add_argument('-s','--modules_stat',help='A file with BGCs linked\
+        to statistical modules as >BGC\nmod_info, optional',default=False)
+    parser.add_argument('-i','--include_stat_module', help='If specified, only\
+        this one or more stat_module will be included in the visualisation',\
+        default=False, nargs="+")
+    return parser.parse_args()
 
 # read various color data
 def read_color_genes_file():
@@ -367,14 +391,16 @@ def new_color(gene_or_domain):
 
 def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     color_genes, color_domains, pfam_domain_categories, pfam_info, loci,\
-    max_width, domains_color_file, new_color_domains, module_list=None, H=30,\
-    h=5, l=12, mX=10, mY=10, scaling=30, absolute_start=0, absolute_end=-1):
+    max_width, domains_color_file, new_color_domains, module_list=None, \
+    module_method = 'lda', H=30, h=5, l=12, mX=10, mY=10, scaling=30, \
+    absolute_start=0, absolute_end=-1):
     '''
     Create the main SVG document:
         - read pfd file with domain information (pfdFile contains complete path)
         - read GenBank document (GenBankFile contains handle of opened file)
         - record genes, start and stop positions, and strands, and associate domains
         - write the SVG files
+    module_method: str, should be either 'lda' or 'stat'
     '''
     
     # for colors not found in colors_genes and color_domains, we need to generate them from scratch
@@ -410,8 +436,15 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
             
     if write_html:
         if module_list:
-            mod_info = 'Topic {}, probability {}'.format(module_list[0],\
-                module_list[1])
+            if module_method == 'lda':
+                mod_info = 'Topic {}, probability {}'.format(module_list[0],\
+                    module_list[1])
+            elif module_method == 'stat':
+                mod_info = 'Statistical module {}, occurrence {}, '.format(\
+                    module_list[0],module_list[1]) +\
+                    'detection cutoff {}, '.format(module_list[4])
+            else:
+                raise SystemExit('\nWrong method for drawing module (SVG)')
             header = "<div><h2>{}</h2></div>\n".format(mod_info)
             header += "\t\t<div title=\"" + mod_info + "\">\n"
         else:
@@ -700,8 +733,10 @@ def read_dom_hits(dom_hits_file,color_domains,pfam_info,scaling=30,H=30):
     print('  read domains')
     return identifiers,new_color_domains
 
-def read_modules(filename):
+def read_modules(filename, lda_or_stat='lda'):
     '''Returns dict of {bgc_name:[[info,module_tuple]]}
+
+    lda_or_stat: str, either lda or stat to specify the method
     '''
     mod_dict = defaultdict(list)
     print('\nReading modules')
@@ -714,51 +749,80 @@ def read_modules(filename):
                 for mod in lines:
                     if not mod.startswith('cl') and not mod.startswith('kn'):
                         mod = mod.strip().split('\t')
-                        mod_tup = tuple([m.split(':')[0] for m in \
-                            mod[-1].split(',')])
+                        if lda_or_stat == 'lda':
+                            mod_tup = tuple([m.split(':')[0] for m in \
+                                mod[-1].split(',')])
+                        elif lda_or_stat == 'stat':
+                            mod_tup = tuple(mod[-1].split(','))
+                        else:
+                            raise SystemExit(\
+                                '\nInvalid method while reading modules, '+
+                                'should be either lda or stat')
                         mod_list = mod[:-1] + [mod_tup]
                         mod_dict[header].append(mod_list)
     return mod_dict
 
-if __name__ == '__main__':
-    filenames = sys.argv[1] #file with list of BGC gbk files to plot
-    domains_colour_file_path = sys.argv[2]
-    dom_hits_file = sys.argv[3]
-    outfile = sys.argv[4]
-    if len(sys.argv) >= 6:
-        modsfile = sys.argv[5]
-        modules = read_modules(modsfile)
-    else:
-        modules = False
-    if len(sys.argv) == 7:
-        topic_include = sys.argv[6]
-    else:
-        topic_include = False
 
-    print(topic_include,topic_include=='842')
-    with open(outfile,'w') as outf:
+if __name__ == '__main__':
+    # filenames = sys.argv[1] #file with list of BGC gbk files to plot
+    # domains_colour_file_path = sys.argv[2]
+    # dom_hits_file = sys.argv[3]
+    # outfile = sys.argv[4]
+    # if len(sys.argv) >= 6:
+        # modsfile = sys.argv[5]
+        # modules_lda = read_modules(modsfile)
+    # else:
+        # modules_lda = False
+    # if len(sys.argv) == 7:
+        # topic_include = sys.argv[6]
+    # else:
+        # topic_include = False
+
+    cmd = get_commands()
+
+    if cmd.modules_lda:
+        modules_lda = read_modules(cmd.modules_lda)
+    else:
+        modules_lda = cmd.modules_lda
+    if cmd.modules_stat:
+        modules_stat = read_modules(cmd.modules_stat,lda_or_stat='stat')
+    else:
+        modules_stat = cmd.modules_stat
+    with open(cmd.outfile,'w') as outf:
         pass #clear outfile
-    with open(filenames,'r') as inf:
+    with open(cmd.filenames,'r') as inf:
         files = [line.strip() for line in inf]
     files.reverse()
-    domain_colours = read_color_domains_file(domains_colour_file_path)
+    domain_colours = read_color_domains_file(cmd.domains_colour_file)
     pfam_info = {}
-    dom_hits,new_colour_doms = read_dom_hits(dom_hits_file,domain_colours,\
+    dom_hits,new_colour_doms = read_dom_hits(cmd.dom_hits_file,domain_colours,\
         pfam_info)
 
     for filename in files:
         print(filename)
         bgc = os.path.split(filename)[1].split('.gbk')[0]
-        SVG(True, outfile,filename,bgc,dom_hits,{},domain_colours,{},\
-            pfam_info,-1,None,domains_colour_file_path,new_colour_doms)
-        if modules:
-            for module in modules[bgc]:
+        SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
+            pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms)
+        if modules_lda:
+            for module in modules_lda[bgc]:
                 plot=True
-                if topic_include:
+                if cmd.topic_include:
                     print(module[0])
-                    if not module[0] == topic_include:
+                    if not module[0] in cmd.topic_include:
                         plot=False
                 if plot:
-                    SVG(True, outfile,filename,bgc,dom_hits,{},domain_colours,{},\
-                        pfam_info,-1,None,domains_colour_file_path,new_colour_doms,
-                        module_list=module)
+                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
+                        pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,
+                        module_list=module, module_method = 'lda')
+        if modules_stat:
+            for module in modules_stat[bgc]:
+                plot=True
+                if cmd.include_stat_module:
+                    print(module[0])
+                    if not module[0] in cmd.include_stat_module:
+                        plot=False
+                if plot:
+                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
+                        pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,
+                        module_list=module, module_method = 'stat')
+        
