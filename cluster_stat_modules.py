@@ -4,7 +4,7 @@ Perform clustering of the statistical method modules.
 Author: Joris Louwen
 '''
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 import numpy as np
 import os
@@ -113,10 +113,12 @@ def cluster_hierarchical(data):
 if __name__ == '__main__':
     print('Start')
     mod_info = argv[1]
+    num_clusters = int(argv[2])
 
-    prefix = mod_info.split('.txt')[0]
+    prefix = mod_info.split('.txt')[0]+'_euclidean'
     out_mods = prefix +'_clustering.txt'
     out_clust_centers = prefix + '_cluster_centers.txt'
+    out_clusts = prefix + '_clusters_with modules.txt'
     modules = {} #keep track of info
     rownames = [] #in case mod_nums are not sequential
     corpus = [] #list of strings
@@ -144,19 +146,45 @@ if __name__ == '__main__':
     # print(new_euclidean_distances(sparse_feat_matrix[0],sparse_feat_matrix[1]))
 
     # KMeans.euclidean_distances = new_euclidean_distances
-    euclidean_distances = new_euclidean_distances
-    kmeans = KMeans(n_clusters=2, n_init=20, max_iter=1000, random_state=595,\
-        verbose=1, tol=0.000001).fit(sparse_feat_matrix)
+    # euclidean_distances = new_euclidean_distances
+    kmeans = KMeans(n_clusters=num_clusters, n_init=20, max_iter=1000, \
+        random_state=595, verbose=0, tol=0.000001).fit(sparse_feat_matrix)
     print(kmeans)
-    clust_centers = kmeans.cluster_centers_
+    clust_centers = sp.csr_matrix(kmeans.cluster_centers_)
     labels = kmeans.labels_
+    cluster_dict = defaultdict(list)
+    np.set_printoptions(precision=2)
+    #print within cluster sum of squares (inertia)
+    print(kmeans.inertia_)
     with open(out_mods,'w') as outf:
         outf.write(header+'\tCluster\n')
         for subcl,cl in zip(rownames,labels):
+            cluster_dict[cl].append(subcl)
             outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
                 cl))
-    with open(out_clust_centers,'w') as outf:
-        outf.write('Cluster\t{}\n'.format('\t'.join(colnames)))
+    with open(out_clust_centers,'w') as outf, open(out_clusts,'w') as outf_c:
+        # outf.write('Cluster\t{}\n'.format('\t'.join(colnames)))
         for i in range(clust_centers.shape[0]):
-            outf.write('{}\t{}\n'.format(i,\
-                '\t'.join(map(str,clust_centers[i]))))
+            # outf.write('{}\t{}\n'.format(i,\
+                # '\t'.join(map(str,clust_centers[i]))))
+
+            matches = cluster_dict[i]
+            counts = Counter([dom for m in matches for dom in \
+                modules[m][-1].split(',')])
+            # zip(colnames,clust_centers[i])
+            spars = clust_centers[i]
+            feat_inds = spars.nonzero()[1]
+            feat_tups = [(spars[0,ind],colnames[ind]) for ind in \
+                feat_inds]
+            feat_format = ['{}:{:.2f}'.format(dom,float(score)) for score,dom\
+                in sorted(feat_tups,reverse=True)]
+            outf_c.write('#Subcluster-family {}, {} subclusters\n'.format(i,\
+                len(matches)))
+            outf_c.write('#Occurrences: {}\n'.format(', '.join(\
+                [dom+':'+str(c) for dom,c in counts.most_common()])))
+            outf_c.write('#Features: {}\n'.format(', '.join(feat_format)))
+            #maybe as a score the distance to the cluster center?
+            for match in matches:
+                outf_c.write('{}\t{}\n'.format(match,\
+                    '\t'.join(modules[match])))
+            
