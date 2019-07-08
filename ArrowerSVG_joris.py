@@ -442,7 +442,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
             elif module_method == 'stat':
                 mod_info = 'Statistical module {}, occurrence {}, '.format(\
                     module_list[0],module_list[1]) +\
-                    'detection cutoff {}, '.format(module_list[4])
+                    'detection cutoff {:.2e}'.format(float(module_list[4]))
             else:
                 raise SystemExit('\nWrong method for drawing module (SVG)')
             header = "<div><h2>{}</h2></div>\n".format(mod_info)
