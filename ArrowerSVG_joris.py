@@ -440,9 +440,11 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                 mod_info = 'Topic {}, probability {}'.format(module_list[0],\
                     module_list[1])
             elif module_method == 'stat':
-                mod_info = 'Statistical module {}, occurrence {}, '.format(\
-                    module_list[0],module_list[1]) +\
-                    'detection cutoff {:.2e}'.format(float(module_list[4]))
+                mod_info = (\
+                    'Family {}, statistical module {}, occurrence '.format(\
+                    module_list[-1],module_list[0]) +\
+                    '{}, detection cutoff {:.2e}'.format(module_list[1],\
+                    float(module_list[4])))
             else:
                 raise SystemExit('\nWrong method for drawing module (SVG)')
             header = "<div><h2>{}</h2></div>\n".format(mod_info)
@@ -570,15 +572,15 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                 stop = int(stop/scaling)
                 
                 # assemble identifier to match domains with this feature
-                try:
-                    protein_id = feature.qualifiers['protein_id'][0]
-                except KeyError:
-                    protein_id = ""
-                    pass
-                identifier = BGCname + "_ORF" + str(feature_counter)
-                identifier += ":gid::" if GeneName == "NoName" else ":gid:" + str(GeneName) + ":"
-                identifier += "pid:" + str(protein_id) + ":loc:" + str(feature.location.start) + ":" + str(feature.location.end)
-                identifier = identifier.replace("<","").replace(">","")
+                # try:
+                    # protein_id = feature.qualifiers['protein_id'][0]
+                # except KeyError:
+                    # protein_id = ""
+                    # pass
+                # identifier = BGCname + "_ORF" + str(feature_counter)
+                # identifier += ":gid::" if GeneName == "NoName" else ":gid:" + str(GeneName) + ":"
+                # identifier += "pid:" + str(protein_id) + ":loc:" + str(feature.location.start) + ":" + str(feature.location.end)
+                # identifier = identifier.replace("<","").replace(">","")
 
                 # gene category according to domain content
                 #has_core = False
@@ -619,7 +621,9 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                 if module_list:
                     domains_in_gene = ';'.join([info[3] for info in \
                         domain_list])
-                    if not domains_in_gene in module_list[-1]:
+                    #stat index is 5, lda index is 2
+                    mod_i = 2 if module_method == 'lda' else 5
+                    if not domains_in_gene in module_list[mod_i]:
                         should_draw_arrow = False
                 if should_draw_arrow:
                     arrow = draw_arrow(additional_tabs, start+mX, add_origin_Y+mY+h, int(feature.location.end-feature.location.start)/scaling, l, H, h, strand, color, color_contour, gene_category, cds_tag, domain_list)
@@ -752,13 +756,14 @@ def read_modules(filename, lda_or_stat='lda'):
                         if lda_or_stat == 'lda':
                             mod_tup = tuple([m.split(':')[0] for m in \
                                 mod[-1].split(',')])
+                            mod_list = mod[:-1] + [mod_tup]
                         elif lda_or_stat == 'stat':
-                            mod_tup = tuple(mod[-1].split(','))
+                            mod_tup = tuple(mod[5].split(','))
+                            mod_list = mod[:5] + [mod_tup] + mod[-1:]
                         else:
                             raise SystemExit(\
                                 '\nInvalid method while reading modules, '+
                                 'should be either lda or stat')
-                        mod_list = mod[:-1] + [mod_tup]
                         mod_dict[header].append(mod_list)
     return mod_dict
 
