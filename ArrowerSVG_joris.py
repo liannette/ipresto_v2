@@ -820,7 +820,11 @@ if __name__ == '__main__':
                         pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,
                         module_list=module, module_method = 'lda')
         if modules_stat:
-            for module in modules_stat[bgc]:
+            mods = modules_stat[bgc]
+            if len(mods[0]) == 6:
+                #sort on family
+                mods.sort(key=lambda x: int(x[-1]))
+            for module in mods:
                 plot=True
                 if cmd.include_stat_module:
                     print(module[0])
