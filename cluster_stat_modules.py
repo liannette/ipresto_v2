@@ -155,23 +155,18 @@ if __name__ == '__main__':
     cluster_dict = defaultdict(list)
     np.set_printoptions(precision=2)
     #print within cluster sum of squares (inertia)
-    print(kmeans.inertia_)
+    print('Within-cluster sum-of-squares (inertia):', kmeans.inertia_)
     with open(out_mods,'w') as outf:
         outf.write(header+'\tCluster\n')
         for subcl,cl in zip(rownames,labels):
             cluster_dict[cl].append(subcl)
             outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
                 cl))
-    with open(out_clust_centers,'w') as outf, open(out_clusts,'w') as outf_c:
-        # outf.write('Cluster\t{}\n'.format('\t'.join(colnames)))
+    with open(out_clusts,'w') as outf_c:
         for i in range(clust_centers.shape[0]):
-            # outf.write('{}\t{}\n'.format(i,\
-                # '\t'.join(map(str,clust_centers[i]))))
-
             matches = cluster_dict[i]
             counts = Counter([dom for m in matches for dom in \
                 modules[m][-1].split(',')])
-            # zip(colnames,clust_centers[i])
             spars = clust_centers[i]
             feat_inds = spars.nonzero()[1]
             feat_tups = [(spars[0,ind],colnames[ind]) for ind in \
