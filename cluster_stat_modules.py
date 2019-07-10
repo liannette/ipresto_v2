@@ -3,18 +3,21 @@
 Perform clustering of the statistical method modules.
 Author: Joris Louwen
 '''
-
+import os
+#make sure that numpy only uses one thread
+os.environ['OMP_NUM_THREADS'] = '1'
 from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 import numpy as np
-import os
+# import os
 import scipy.cluster.hierarchy as sch
 import scipy.sparse as sp
-from sklearn.cluster import KMeans
+from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import CountVectorizer
 import sklearn
 from sys import argv
+import time
 
 
 def plot_svd_components(sparse_m):
@@ -56,7 +59,7 @@ def calc_jacc_index_matrix(sparse_m):
 
     sparse_m: scipy_sparse_matrix
     '''
-    #this will construct the upper triangle of the matrix
+    #this will construct a square matrix
     len_rows = sparse_m.shape[0]
     row = []
     col = []
@@ -67,9 +70,14 @@ def calc_jacc_index_matrix(sparse_m):
             doms_b = set(sparse_m[j].nonzero()[1])
             ji = len(doms_a & doms_b) / len(doms_a | doms_b)
             if ji > 0:
+                jd = 1-ji
                 row.append(i)
+                row.append(j) #make it a square matrix
                 col.append(j)
-                data.append(ji)
+                col.append(i)
+                data.append(jd)
+                data.append(jd)
+                #assume there are no identical subclusters 1-ji would become 0
     distance_m = sp.csr_matrix((data, (row,col)), shape=(len_rows,len_rows))
     return distance_m
 
@@ -110,54 +118,26 @@ def cluster_hierarchical(data):
     clust = sch.linkage(dist)
     print(clust)
 
-if __name__ == '__main__':
-    print('Start')
-    mod_info = argv[1]
-    num_clusters = int(argv[2])
+def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
+    out_mods, out_clusts, cores=1):
+    '''Kmeans clustering on sparse_m with num_clusters and writes to file
 
-    prefix = mod_info.split('.txt')[0]+'_euclidean'
-    out_mods = prefix +'_clustering.txt'
-    out_clust_centers = prefix + '_cluster_centers.txt'
-    out_clusts = prefix + '_clusters_with modules.txt'
-    modules = {} #keep track of info
-    rownames = [] #in case mod_nums are not sequential
-    corpus = [] #list of strings
-    vectorizer = CountVectorizer(lowercase=False,binary=True,dtype=np.int32,\
-        token_pattern=r"(?u)[^,]+") #finds everything separated by ','
-    with open(mod_info,'r') as inf:
-        print('\nReading module file')
-        #{mod_num:[info]}
-        header = inf.readline().strip('\n') #header
-        for line in inf:
-            line = line.strip().split('\t')
-            mod_num = int(line[0])
-            modules[mod_num] = line[1:]
-            rownames.append(mod_num)
-            corpus.append(line[-1])
-    print('\nBuilding sparse matrix representation of module features')
-    sparse_feat_matrix = vectorizer.fit_transform(corpus)
-    # print(sparse_feat_matrix)
-    # print(sparse_feat_matrix.toarray())
-    colnames = vectorizer.get_feature_names()
-    print('  {} features'.format(len(colnames)))
-    # print(sparse_feat_matrix.A)
-    # print(sparse_feat_matrix[0])
-    # cluster_hierarchical(sparse_feat_matrix)
-    # print(new_euclidean_distances(sparse_feat_matrix[0],sparse_feat_matrix[1]))
-
-    # KMeans.euclidean_distances = new_euclidean_distances
-    # euclidean_distances = new_euclidean_distances
+    sparse_m: csr_matrix, shape(n_samples, n_features)
+    num_clusters: int, number of clusters
+    out_mods, out_clusts: str, filepaths
+    cores: int, amount of cores to use
+    '''
+    print('\nRunning k-means')
     kmeans = KMeans(n_clusters=num_clusters, n_init=20, max_iter=1000, \
-        random_state=595, verbose=0, tol=0.000001).fit(sparse_feat_matrix)
+        random_state=595, verbose=0, tol=0.000001,n_jobs=cores).fit(sparse_m)
     print(kmeans)
     clust_centers = sp.csr_matrix(kmeans.cluster_centers_)
     labels = kmeans.labels_
     cluster_dict = defaultdict(list)
     np.set_printoptions(precision=2)
-    #print within cluster sum of squares (inertia)
     print('Within-cluster sum-of-squares (inertia):', kmeans.inertia_)
     with open(out_mods,'w') as outf:
-        outf.write(header+'\tCluster\n')
+        outf.write(header+'\tFamily\n')
         for subcl,cl in zip(rownames,labels):
             cluster_dict[cl].append(subcl)
             outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
@@ -182,4 +162,54 @@ if __name__ == '__main__':
             for match in matches:
                 outf_c.write('{}\t{}\n'.format(match,\
                     '\t'.join(modules[match])))
-            
+
+def run_dbscan(sparse_m, dist_cutoff, cores):
+    '''
+    '''
+    print('\nCalculating distance matrix')
+    dist_m = calc_jacc_index_matrix(sparse_m)
+    print('\nRunning DBSCAN')
+    clustering = DBSCAN(eps=dist_cutoff, metric='precomputed',min_samples=5,\
+        n_jobs=cores)
+    labels = clustering.labels_
+
+if __name__ == '__main__':
+    print('Start')
+    start = time.time()
+    mod_info = argv[1]
+    number_clusters = int(argv[2])
+    num_cores = int(argv[3])
+
+    #outfiles
+    prefix = mod_info.split('.txt')[0]+'_kmeans_'.format(number_clusters)
+    out_mods = prefix +'_clustering.txt'
+    # out_clust_centers = prefix + '_cluster_centers.txt'
+    out_clusts = prefix + '_clusters_with modules.txt'
+    #construct feature matrix
+    modules = {} #keep track of info
+    rownames = [] #in case mod_nums are not sequential
+    corpus = [] #list of strings
+    vectorizer = CountVectorizer(lowercase=False,binary=True,dtype=np.int32,\
+        token_pattern=r"(?u)[^,]+") #finds everything separated by ','
+    with open(mod_info,'r') as inf:
+        print('\nReading module file')
+        #{mod_num:[info]}
+        header = inf.readline().strip('\n') #header
+        for line in inf:
+            line = line.strip().split('\t')
+            mod_num = int(line[0])
+            modules[mod_num] = line[1:]
+            rownames.append(mod_num)
+            corpus.append(line[-1])
+    print('\nBuilding sparse matrix representation of module features')
+    sparse_feat_matrix = vectorizer.fit_transform(corpus)
+    colnames = vectorizer.get_feature_names()
+    print('  {} features'.format(len(colnames)))
+
+    cluster_kmeans(sparse_feat_matrix, modules, number_clusters, rownames,\
+        colnames, out_mods, out_clusts, cores=num_cores)
+
+    end = time.time()
+    t = end-start
+    t_str = '{}h{}m{}s'.format(int(t/3600),int(t%3600/60),int(t%3600%60))
+    print('\nScript completed in {}'.format(t_str))
