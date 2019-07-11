@@ -6,18 +6,38 @@ Author: Joris Louwen
 import os
 #make sure that numpy only uses one thread
 os.environ['OMP_NUM_THREADS'] = '1'
+import argparse
 from collections import defaultdict, Counter
 import matplotlib.pyplot as plt
 import numpy as np
 # import os
 import scipy.cluster.hierarchy as sch
 import scipy.sparse as sp
+from scipy.spatial.distance import cdist
 from sklearn.cluster import KMeans, DBSCAN
 from sklearn.decomposition import TruncatedSVD
 from sklearn.feature_extraction.text import CountVectorizer
-import sklearn
+from sklearn.metrics import silhouette_score, pairwise_distances_chunked
 from sys import argv
 import time
+
+def get_commands():
+    parser = argparse.ArgumentParser(description="A script to cluster the\
+        statistical modules into families with different algorithms.")
+    parser.add_argument("-i", "--infile", help="Input tsv\
+        file with module information (filtered_modules.txt). A header is\
+        present, one module per line where a module is the last element in\
+        the line. Genes separated by , and domains by ;", required=True)
+    parser.add_argument('-c', '--cores', help='Cores to use, default = 1',
+        default=1, type=int)
+    parser.add_argument('-k', '--k_clusters',help='Amount of clusters to use\
+        with k-means clustering. Only used if k-means is specified, default =\
+        1000',
+        default=1000, type=int)
+    parser.add_argument('-m', '--method', help='Method for clustering. Should\
+        be a number:\n\t0 = all methods\n\t1 = k-means\n\t2 = DBSCAN', \
+        default = 0, type=int)
+    return parser.parse_args()
 
 
 def plot_svd_components(sparse_m):
@@ -57,7 +77,8 @@ def calc_jacc_index_matrix(sparse_m):
     '''
     Returns sparse distance matrix (jaccard index) of subclusters in sparse_m
 
-    sparse_m: scipy_sparse_matrix
+    sparse_m: csr_matrix shape(n_samples,n_features)
+    distance_m: csr_matrix, shape(n_samples,n_samples)
     '''
     #this will construct a square matrix
     len_rows = sparse_m.shape[0]
@@ -119,15 +140,27 @@ def cluster_hierarchical(data):
     print(clust)
 
 def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
-    out_mods, out_clusts, cores=1):
+    prefix, cores=1):
     '''Kmeans clustering on sparse_m with num_clusters and writes to file
 
     sparse_m: csr_matrix, shape(n_samples, n_features)
+    modules: dict {mod_num:[info,modules]}
     num_clusters: int, number of clusters
-    out_mods, out_clusts: str, filepaths
+    rownames: list of ints, [mod_nums], sequential mod_nums, keeping track of
+        rows of sparse_m
+    colnames: list of str, all domains sequential order to keep track of
+        columns of sparse_m
+    prefix: str, prefix of outfile
     cores: int, amount of cores to use
     '''
     print('\nRunning k-means')
+    #outfiles
+    kmeans_pre = '_kmeans_{}_families'.format(num_clusters)
+    out_mods = prefix + kmeans_pre + '.txt'
+    # out_clust_centers = prefix + '_cluster_centers.txt'
+    out_clusts = prefix + kmeans_pre + '_by_family.txt'
+
+    #running algorithm
     kmeans = KMeans(n_clusters=num_clusters, n_init=20, max_iter=1000, \
         random_state=595, verbose=0, tol=0.000001,n_jobs=cores).fit(sparse_m)
     print(kmeans)
@@ -136,12 +169,14 @@ def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
     cluster_dict = defaultdict(list)
     np.set_printoptions(precision=2)
     print('Within-cluster sum-of-squares (inertia):', kmeans.inertia_)
+    #link each module to a family/k-means cluster
     with open(out_mods,'w') as outf:
         outf.write(header+'\tFamily\n')
         for subcl,cl in zip(rownames,labels):
             cluster_dict[cl].append(subcl)
             outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
                 cl))
+    #write file of listing all families/clusters by family with their modules
     with open(out_clusts,'w') as outf_c:
         for i in range(clust_centers.shape[0]):
             matches = cluster_dict[i]
@@ -163,35 +198,92 @@ def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
                 outf_c.write('{}\t{}\n'.format(match,\
                     '\t'.join(modules[match])))
 
-def run_dbscan(sparse_m, dist_cutoff, cores):
+def jaccard_on_sparse(row1, row2):
+    '''Use jaccard distance on sparse matrix rows, returns float in array
     '''
+    dist = cdist(row1.A,row2.A,metric='jaccard')
+    return dist
+
+
+def run_dbscan(sparse_m, dist_cutoff, modules, rownames, prefix, cores):
     '''
-    print('\nCalculating distance matrix')
-    dist_m = calc_jacc_index_matrix(sparse_m)
+    Nearest neighbour algorithm with jaccard distance
+
+    sparse_m: csr_matrix, shape(n_samples, n_features)
+    dist_cutoff: float, between 0 and 1 that denotes when modules are
+        in a cluster based on jaccard distance
+    modules: dict {mod_num:[info,modules]}
+    rownames: list of ints, [mod_nums], sequential mod_nums, keeping track of
+        rows of sparse_m
+    prefix: str, prefix of outfile
+    cores: int, amount of cores to use
+    '''
+    # print('\nCalculating distance matrix')
+    # dist_m = calc_jacc_index_matrix(sparse_m)
+    # print(dist_m)
     print('\nRunning DBSCAN')
-    clustering = DBSCAN(eps=dist_cutoff, metric='precomputed',min_samples=5,\
-        n_jobs=cores)
+    clustering = DBSCAN(eps=dist_cutoff, metric=jaccard_on_sparse,\
+        min_samples=5, n_jobs=cores).fit(sparse_m)
+    print(clustering)
     labels = clustering.labels_
+    n_labels = len(set(labels))
+    n_noise = list(labels).count(-1)
+    if n_noise:
+        n_labels -= 1
+    print('Found {} clusters and {} noise points'.format(n_labels,n_noise))
+
+    # #measure for average dist in cluster vs average dist to nearest clust
+    # #1 is best -1 is worst
+    # sil = silhouette_score(dist_m, labels, metric='precomputed')
+    # print("  silhouette Coefficient: {0.3f}".format(sil))
+
+    #outfiles
+    dbscan_pre = '_dbscan_{}_families'.format(n_labels)
+    out_mods = prefix + dbscan_pre + '.txt'
+    out_clusts = prefix + dbscan_pre + '_by_family.txt'
+
+    #link each module to a family/cluster
+    cluster_dict = defaultdict(list)
+    with open(out_mods,'w') as outf:
+        outf.write(header+'\tFamily\n')
+        for subcl,cl in zip(rownames,labels):
+            cluster_dict[cl].append(subcl)
+            outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
+                cl))
+    #write file of listing all families/clusters by family with their modules
+    with open(out_clusts,'w') as outf_c:
+        for i in range(len(labels)):
+            matches = cluster_dict[i]
+            counts = Counter([dom for m in matches for dom in \
+                modules[m][-1].split(',')])
+            outf_c.write('#Subcluster-family {}, {} subclusters\n'.format(i,\
+                len(matches)))
+            outf_c.write('#Occurrences: {}\n'.format(', '.join(\
+                [dom+':'+str(c) for dom,c in counts.most_common()])))
+            #maybe as a score the avg distance?
+            for match in matches:
+                outf_c.write('{}\t{}\n'.format(match,\
+                    '\t'.join(modules[match])))
 
 if __name__ == '__main__':
     print('Start')
     start = time.time()
-    mod_info = argv[1]
-    number_clusters = int(argv[2])
-    num_cores = int(argv[3])
+    # mod_info = argv[1]
+    # number_clusters = int(argv[2])
+    # num_cores = int(argv[3])
+
+    cmd = get_commands()
 
     #outfiles
-    prefix = mod_info.split('.txt')[0]+'_kmeans_'.format(number_clusters)
-    out_mods = prefix +'_clustering.txt'
-    # out_clust_centers = prefix + '_cluster_centers.txt'
-    out_clusts = prefix + '_clusters_with modules.txt'
+    out_prefix = cmd.infile.split('.txt')[0]
+
     #construct feature matrix
     modules = {} #keep track of info
     rownames = [] #in case mod_nums are not sequential
     corpus = [] #list of strings
     vectorizer = CountVectorizer(lowercase=False,binary=True,dtype=np.int32,\
         token_pattern=r"(?u)[^,]+") #finds everything separated by ','
-    with open(mod_info,'r') as inf:
+    with open(cmd.infile,'r') as inf:
         print('\nReading module file')
         #{mod_num:[info]}
         header = inf.readline().strip('\n') #header
@@ -206,8 +298,13 @@ if __name__ == '__main__':
     colnames = vectorizer.get_feature_names()
     print('  {} features'.format(len(colnames)))
 
-    cluster_kmeans(sparse_feat_matrix, modules, number_clusters, rownames,\
-        colnames, out_mods, out_clusts, cores=num_cores)
+    if cmd.method in [0,1]:
+        cluster_kmeans(sparse_feat_matrix, modules, cmd.k_clusters, rownames,\
+            colnames, out_prefix, cores=cmd.cores)
+    if cmd.method in [0,2]:
+        neighbour_cutoff = 0.5
+        run_dbscan(sparse_feat_matrix, neighbour_cutoff, modules, rownames,\
+            out_prefix, cmd.cores)
 
     end = time.time()
     t = end-start
