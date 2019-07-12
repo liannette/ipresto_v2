@@ -7,6 +7,7 @@ import os
 import argparse
 from collections import defaultdict, Counter
 from itertools import groupby, combinations
+from multiprocessing import Pool
 import numpy as np
 import time
 
@@ -17,6 +18,9 @@ def get_commands():
     parser.add_argument("-i", "--infile", help="Input file with modules\
         grouped by family, headerlines are # and each module is on a separate\
         line where the domains are the last element on the tsv line", \
+        required=True)
+    parser.add_argument('-l','--list_file',help='File that where modules are\
+        listed which will be written again but without redundant modules',
         required=True)
     parser.add_argument('-c', '--cores', help='Cores to use, default = 1',
         default=1, type=int)
@@ -48,50 +52,124 @@ def read_families(infile):
                     family_modules[num].append(mod)
     return family_dict,family_modules,modules_info
 
-def find_redundant_modules(fam, mod
+def find_redundant_modules(fam, mods, mod_info):
+    '''Returns tuple of fam, list of redundant modules
+
+    fam: int, family number
+    mods: list of modules in the family (tuples of domains)
+    mod_info: dict of {module:[info]}, second elem should be occurrence
+    '''
+    dels = []
+    parent_dict = defaultdict(list) #record parents for each module
+    pairs = combinations(mods,2)
+    for pair in pairs:
+        p1,p2 = pair
+        inter = set(p1).intersection(set(p2))
+        if len(inter) == len(p1):
+            #p2 is parent of p1
+            parent_dict[p1].append(p2)
+        if len(inter) == len(p2):
+            parent_dict[p2].append(p1)
+    for child,parents in sorted(parent_dict.items(),key=len):
+        # print(child,parents)
+        occ_c = int(mod_info[child][1])
+        occ_p = max(map(int,[mod_info[p][1] for p in parents]))
+        # print(occ_c,occ_p)
+        if occ_c <= occ_p:
+            dels.append(child)
+    return (fam,dels)
+
+def find_redundant_modules_yield(in_tuple):
+    '''Returns tuple of fam, list of redundant modules
+
+    fam: int, family number
+    mods: list of modules in the family (tuples of domains)
+    mod_info: dict of {module:[info]}, second elem should be occurrence
+    '''
+    fam, mods, mod_info = in_tuple
+    dels = []
+    parent_dict = defaultdict(list) #record parents for each module
+    pairs = combinations(mods,2)
+    for pair in pairs:
+        p1,p2 = pair
+        inter = set(p1).intersection(set(p2))
+        if len(inter) == len(p1):
+            #p2 is parent of p1
+            parent_dict[p1].append(p2)
+        if len(inter) == len(p2):
+            parent_dict[p2].append(p1)
+    for child,parents in sorted(parent_dict.items(),key=len):
+        # print(child,parents)
+        occ_c = int(mod_info[child][1])
+        occ_p = max(map(int,[mod_info[p][1] for p in parents]))
+        # print(occ_c,occ_p)
+        if occ_c <= occ_p:
+            dels.append(child)
+    return (fam,dels)
+
+def yield_loop_info(fam_modules, mod_info):
+    '''
+    '''
+    for fam, mods in fam_modules.items():
+        specific_info = {mod:mod_info[mod] for mod in mods}
+        yield (fam,mods,specific_info)
 
 if __name__ == '__main__':
     start = time.time()
     print('Start')
     cmd = get_commands()
 
+    out_by_fam = cmd.infile.split('.txt')[0] + '_reduced.txt'
+    out_list = cmd.infile.split('_by_family.txt')[0] + '_reduced.txt'
     fam_dict,fam_modules,mod_info = read_families(cmd.infile)
     # print(fam_modules)
     #check intersection between all, is intersection length of smaller one?
     #then the bigger is parents
     dels_all = []
-    for fam, mod in fam_modules.items():
-        dels = []
-        parent_dict = defaultdict(list) #record parents for each module
-        pairs = combinations(mod,2)
-        for pair in pairs:
-            p1,p2 = pair
-            # print('pairs',p1,p2)
-            inter = set(p1).intersection(set(p2))
-            if len(inter) == len(p1):
-                #p2 is parent of p1
-                parent_dict[p1].append(p2)
-            if len(inter) == len(p2):
-                parent_dict[p2].append(p1)
-        for child,parents in sorted(parent_dict.items(),key=len):
-            print(child,parents)
-            occ_c = int(mod_info[child][1])
-            occ_p = max(map(int,[mod_info[p][1] for p in parents]))
-            print(occ_c,occ_p)
-            if occ_c <= occ_p:
-                dels.append(child)
-        print(dels,len(dels))
-            # print('overlap',inter1,inter2)
-            # if inter1 == len(p1):
-                # print(1)
-    # for k,v in parent_dict.items():
-        # if len(v) != 1:
-            # print('\nchild')
-            # print(k)
-            # print('parents')
-            # for par in sorted(v,key=len):
-                # print(par)
-    # print(np.mean([len(val) for val in parent_dict.values()]))
+    # for fam, mods in fam_modules.items():
+        # print(find_redundant_modules(fam, mods, mod_info))
+    info = yield_loop_info(fam_modules,mod_info)
+    results = []
+    # for inf in info:
+        # result = find_redundant_modules_yield(inf)
+        # results.append(result)
+    pool = Pool(cmd.cores)
+    results = pool.map(find_redundant_modules_yield, info)
+    dels_dict = {fam:set(dels) for fam,dels in results}
+    with open(out_list,'w') as outf, open(cmd.list_file,'r') as inf:
+        header=inf.readline()
+        outf.write(header)
+        for line in inf:
+            splitline = line.strip().split('\t')
+            mod = tuple(splitline[-2].split(','))
+            family = int(splitline[-1])
+            try:
+                mods = dels_dict[family]
+            except KeyError:
+                outf.write(line)
+            else:
+                if not mod in mods:
+                    outf.write(line)
+
+    with open(out_by_fam,'w') as outf:
+        for fam, mods in sorted(fam_modules.items()):
+            dels = dels_dict[fam]
+            mods = [mod for mod in mods if not mod in dels]
+            counts = Counter([dom for mod in mods for dom in mod])
+            outf.write('#Subcluster-family {}, {} subclusters\n'.format(fam,\
+                len(mods)))
+            outf.write('#Occurrences: {}\n'.format(', '.join(\
+                [dom+':'+str(c) for dom,c in counts.most_common()])))
+            outf.write('#Features: {}\n'.format(', '.join(\
+                ['{}:{:.2f}'.format(dom,c/len(mods)) for dom,c in \
+                counts.most_common()])))
+            for mod in mods:
+                outf.write('{}\t{}\n'.format(mod_info[mod],\
+                    ','.join(sorted(mod))))
+
+    print('Removed {} redundant modules'.format(sum(\
+        [len(vals) for vals in dels_dict.values()])))
+
 
     # print(fam_dict)
     #calc clans?
