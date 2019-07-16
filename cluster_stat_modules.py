@@ -37,6 +37,9 @@ def get_commands():
     parser.add_argument('-m', '--method', help='Method for clustering. Should\
         be a number:\n\t0 = all methods\n\t1 = k-means\n\t2 = DBSCAN', \
         default = 0, type=int)
+    parser.add_argument('-n', '--neighbour_cutoff', help='Cutoff for DBSCAN\
+        which is the max distance between subclusters to be a neighbour, \
+        default = 0.4', default=0.4, type=float)
     return parser.parse_args()
 
 
@@ -177,9 +180,12 @@ def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
             outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
                 cl))
     #write file of listing all families/clusters by family with their modules
+    avg_clst_size = []
     with open(out_clusts,'w') as outf_c:
         for i in range(clust_centers.shape[0]):
             matches = cluster_dict[i]
+            l_matches = len(matches)
+            avg_clst_size.append(l_matches)
             counts = Counter([dom for m in matches for dom in \
                 modules[m][-1].split(',')])
             spars = clust_centers[i]
@@ -189,7 +195,7 @@ def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
             feat_format = ['{}:{:.2f}'.format(dom,float(score)) for score,dom\
                 in sorted(feat_tups,reverse=True)]
             outf_c.write('#Subcluster-family {}, {} subclusters\n'.format(i,\
-                len(matches)))
+                l_matches))
             outf_c.write('#Occurrences: {}\n'.format(', '.join(\
                 [dom+':'+str(c) for dom,c in counts.most_common()])))
             outf_c.write('#Features: {}\n'.format(', '.join(feat_format)))
@@ -197,6 +203,7 @@ def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
             for match in matches:
                 outf_c.write('{}\t{}\n'.format(match,\
                     '\t'.join(modules[match])))
+    print('\nAverage clustersize:', np.mean(avg_clst_size))
 
 def jaccard_on_sparse(row1, row2):
     '''Use jaccard distance on sparse matrix rows, returns float in array
@@ -204,6 +211,11 @@ def jaccard_on_sparse(row1, row2):
     dist = cdist(row1.A,row2.A,metric='jaccard')
     return dist
 
+
+def jac_dist_matrix(sparse_m):
+    '''
+    '''
+    
 
 def run_dbscan(sparse_m, dist_cutoff, modules, rownames, prefix, cores):
     '''
@@ -251,19 +263,26 @@ def run_dbscan(sparse_m, dist_cutoff, modules, rownames, prefix, cores):
             outf.write('{}\t{}\t{}\n'.format(subcl,'\t'.join(modules[subcl]),\
                 cl))
     #write file of listing all families/clusters by family with their modules
+    avg_clst_size = []
     with open(out_clusts,'w') as outf_c:
-        for i in range(len(labels)):
+        for i in sorted(set(labels)):
             matches = cluster_dict[i]
+            l_matches = len(matches)
+            avg_clst_size.append(l_matches)
             counts = Counter([dom for m in matches for dom in \
                 modules[m][-1].split(',')])
             outf_c.write('#Subcluster-family {}, {} subclusters\n'.format(i,\
-                len(matches)))
+                l_matches))
             outf_c.write('#Occurrences: {}\n'.format(', '.join(\
                 [dom+':'+str(c) for dom,c in counts.most_common()])))
+            outf_c.write('#Features: {}\n'.format(', '.join(\
+                ['{}:{:.2f}'.format(dom,c/l_matches) for dom,c in \
+                counts.most_common()])))
             #maybe as a score the avg distance?
             for match in matches:
                 outf_c.write('{}\t{}\n'.format(match,\
                     '\t'.join(modules[match])))
+    print('\nAverage clustersize:', np.mean(avg_clst_size))
 
 if __name__ == '__main__':
     print('Start')
@@ -302,8 +321,7 @@ if __name__ == '__main__':
         cluster_kmeans(sparse_feat_matrix, modules, cmd.k_clusters, rownames,\
             colnames, out_prefix, cores=cmd.cores)
     if cmd.method in [0,2]:
-        neighbour_cutoff = 0.5
-        run_dbscan(sparse_feat_matrix, neighbour_cutoff, modules, rownames,\
+        run_dbscan(sparse_feat_matrix, cmd.neighbour_cutoff, modules, rownames,\
             out_prefix, cmd.cores)
 
     end = time.time()
