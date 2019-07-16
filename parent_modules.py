@@ -19,7 +19,7 @@ def get_commands():
         grouped by family, headerlines are # and each module is on a separate\
         line where the domains are the last element on the tsv line", \
         required=True)
-    parser.add_argument('-l','--list_file',help='File that where modules are\
+    parser.add_argument('-l','--list_file',help='File where modules are\
         listed which will be written again but without redundant modules',
         required=True)
     parser.add_argument('-c', '--cores', help='Cores to use, default = 1',
@@ -31,6 +31,9 @@ def read_families(infile):
     Read family file to three dicts: header_descr, fams with modules, mod_info
 
     infile: str, filepath
+    family_dict: dict of {family_number:[header_info]}
+    family_module: dict of {family_number:[module_tuples]}
+    modules_info: dict of {module_tup:[module_info]}
     '''
     family_dict = {}
     family_modules = defaultdict(list)
@@ -108,7 +111,7 @@ def find_redundant_modules_yield(in_tuple):
     return (fam,dels)
 
 def yield_loop_info(fam_modules, mod_info):
-    '''
+    '''Returns generator of (family, modules, specific_module_info)
     '''
     for fam, mods in fam_modules.items():
         specific_info = {mod:mod_info[mod] for mod in mods}
@@ -164,7 +167,7 @@ if __name__ == '__main__':
                 ['{}:{:.2f}'.format(dom,c/len(mods)) for dom,c in \
                 counts.most_common()])))
             for mod in mods:
-                outf.write('{}\t{}\n'.format(mod_info[mod],\
+                outf.write('{}\t{}\n'.format('\t'.join(mod_info[mod]),\
                     ','.join(sorted(mod))))
 
     print('Removed {} redundant modules'.format(sum(\
