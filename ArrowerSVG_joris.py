@@ -43,7 +43,8 @@ def get_commands():
     parser = argparse.ArgumentParser(description="A script visualise BGCs and\
         their modules found with the statistical method and with LDA.")
     parser.add_argument("-f","--filenames",help="A file that contains paths to\
-        gbk files of BGCs that will be plot", required=True)
+        gbk files of BGCs that will be plot, or one gbk file when --one is\
+        provided", required=True)
     parser.add_argument("-c", "--domains_colour_file",help='A tsv file that\
         contains domain_id\tr,g,b on each line. Must be specified, but can be\
         an empty file in which domain colours will be added')
@@ -62,6 +63,9 @@ def get_commands():
     parser.add_argument('-i','--include_stat_module', help='If specified, only\
         this one or more stat_module will be included in the visualisation',\
         default=False, nargs="+")
+    parser.add_argument('--one', help='Instead of a file containing locations\
+        of gbk files, there is one gbk supplied with -f gbkfile.gbk',\
+        default=False, action='store_true')
     return parser.parse_args()
 
 # read various color data
@@ -795,8 +799,11 @@ if __name__ == '__main__':
         modules_stat = cmd.modules_stat
     with open(cmd.outfile,'w') as outf:
         pass #clear outfile
-    with open(cmd.filenames,'r') as inf:
-        files = [line.strip() for line in inf]
+    if cmd.one:
+        files = [cmd.filenames]
+    else:
+        with open(cmd.filenames,'r') as inf:
+            files = [line.strip() for line in inf]
     files.reverse()
     domain_colours = read_color_domains_file(cmd.domains_colour_file)
     pfam_info = {}
@@ -821,13 +828,13 @@ if __name__ == '__main__':
                         module_list=module, module_method = 'lda')
         if modules_stat:
             mods = modules_stat[bgc]
-            if len(mods[0]) == 6:
+            if len(mods[0]) == 7:
                 #sort on family
                 mods.sort(key=lambda x: int(x[-1]))
             for module in mods:
                 plot=True
                 if cmd.include_stat_module:
-                    print(module[0])
+                    # print(module[0])
                     if not module[0] in cmd.include_stat_module:
                         plot=False
                 if plot:
