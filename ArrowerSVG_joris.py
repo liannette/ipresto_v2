@@ -66,6 +66,12 @@ def get_commands():
     parser.add_argument('--one', help='Instead of a file containing locations\
         of gbk files, there is one gbk supplied with -f gbkfile.gbk',\
         default=False, action='store_true')
+    parser.add_argument('--include_stat_family',help='If specified, only\
+        this one or more families will be included in the visualisation',\
+        default=False, nargs="+")
+    parser.add_argument('--include_stat_clan',help='If specified, only\
+        this one or more families will be included in the visualisation',\
+        default=False, nargs="+")
     return parser.parse_args()
 
 # read various color data
@@ -444,11 +450,24 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                 mod_info = 'Topic {}, probability {}'.format(module_list[0],\
                     module_list[1])
             elif module_method == 'stat':
-                mod_info = (\
-                    'Family {}, statistical module {}, occurrence '.format(\
-                    module_list[-1],module_list[0]) +\
-                    '{}, detection cutoff {:.2e}'.format(module_list[1],\
-                    float(module_list[4])))
+                if len(mods[0]) == 7:
+                    mod_info = (\
+                        'Family {}, statistical module {}, '.format(\
+                        module_list[-1],module_list[0]) +\
+                        'occurrence {}, detection cutoff {:.2e}'.format(\
+                        module_list[1], float(module_list[4])))
+                elif len(mods[0]) == 8:
+                    mod_info = (\
+                        'Clan {}, family {}, statistical module {}'.format(\
+                        module_list[-1],module_list[-2],module_list[0]) +\
+                        ', occurrence {}, detection cutoff {:.2e}'.format(\
+                        module_list[1], float(module_list[4])))
+                else:
+                    mod_info = (\
+                        'Statistical module {}, occurrence {}, '.format(\
+                        module_list[0],module_list[1]) +\
+                        'detection cutoff {:.2e}'.format(float(\
+                        module_list[4])))
             else:
                 raise SystemExit('\nWrong method for drawing module (SVG)')
             header = "<div><h2>{}</h2></div>\n".format(mod_info)
@@ -763,7 +782,7 @@ def read_modules(filename, lda_or_stat='lda'):
                             mod_list = mod[:-1] + [mod_tup]
                         elif lda_or_stat == 'stat':
                             mod_tup = tuple(mod[5].split(','))
-                            mod_list = mod[:5] + [mod_tup] + mod[-1:]
+                            mod_list = mod[:5] + [mod_tup] + mod[6:]
                         else:
                             raise SystemExit(\
                                 '\nInvalid method while reading modules, '+
@@ -831,11 +850,20 @@ if __name__ == '__main__':
             if len(mods[0]) == 7:
                 #sort on family
                 mods.sort(key=lambda x: int(x[-1]))
+            elif len(mods[0]) == 8:
+                #sort on clan and then family
+                mods.sort(key=lambda x: (int(x[-1]),int(x[-2])))
             for module in mods:
                 plot=True
                 if cmd.include_stat_module:
                     # print(module[0])
                     if not module[0] in cmd.include_stat_module:
+                        plot=False
+                if cmd.include_stat_family:
+                    if not module[6] in cmd.include_stat_family:
+                        plot=False
+                if cmd.include_stat_clan:
+                    if not module[7] in cmd.include_stat_clan:
                         plot=False
                 if plot:
                     SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
