@@ -34,6 +34,13 @@ def get_commands():
     parser.add_argument('--dbscan_cutoff',help='Distance cutoff for dbscan,\
         default = 0.95',
         type=float, default = 0.95)
+    parser.add_argument('-k', '--k_clusters',help='Amount of clusters to use\
+        with k-means clustering. Only used if k-means is specified, default =\
+        1000',
+        default=1000, type=int)
+    parser.add_argument('-m', '--method', help='Method for clustering. Should\
+        be a number:\n\t0 = all methods\n\t1 = k-means\n\t2 = DBSCAN', \
+        default = 0, type=int)
     return parser.parse_args()
 
 def read_families(infile, occ=False):
@@ -210,8 +217,115 @@ def run_dbscan(sparse_m, dist_cutoff, rownames, list_file, prefix,\
         for cl,fams in sorted(cluster_dict.items()):
             outf.write('>{}\n{}\n'.format(cl,','.join(map(str,fams))))
 
+    #write new list file with clan added
     with open(out_mods,'w') as outf, open(list_file,'r') as inf:
-        header=inf.readline()
+        header=inf.readline().strip()
+        outf.write(header+'\tClan\n')
+        for line in inf:
+            line = line.strip()
+            splitline = line.split('\t')
+            # mod = tuple(splitline[-2].split(','))
+            family = int(splitline[-1])
+            clan = fam_dict[family]
+            outf.write('{}\t{}\n'.format(line,clan))
+
+    #write file listing all clan/clusters by clan with their modules
+    avg_cln_size = []
+    avg_mods_in_cln = []
+    with open(out_clusts,'w') as outf_c:
+        for i in sorted(cluster_dict.keys()):
+            matching_fams = cluster_dict[i]
+            l_fam_matches = len(matching_fams)
+            avg_cln_size.append(l_fam_matches)
+            #list of [[mod_info,mod_tup,fam]]
+            matches = [module_info[mod]+[mod,fam] for fam in \
+                matching_fams for mod in family_modules[fam]]
+            l_matches = len(matches)
+            avg_mods_in_cln.append(l_matches)
+            counts = Counter([dom for m in matches for dom in \
+                m[-2]])
+            outf_c.write(\
+                '#Subcluster-clan {}, {} families, {} subclusters\n'.format(\
+                i, l_fam_matches,l_matches))
+            outf_c.write('#Occurrences: {}\n'.format(', '.join(\
+                [dom+':'+str(c) for dom,c in counts.most_common()])))
+            outf_c.write('#Features: {}\n'.format(', '.join(\
+                ['{}:{:.2f}'.format(dom,c/l_matches) for dom,c in \
+                counts.most_common()])))
+            #maybe as a score the avg distance?
+            for match in matches:
+                outf_c.write('{}\t{}\t{}\n'.format('\t'.join(match[:-2]),\
+                    ','.join(match[-2]),match[-1]))
+    print('\nAverage clansize:', np.mean(avg_cln_size))
+    print('Average amount of modules per clan:',np.mean(avg_mods_in_cln))
+
+def make_feat_matrix(feature_dict):
+    '''Makes a feature matrix of len(feature_dict)*len(feature_dict)
+
+    feature_dict: dict of dict {fam: {feat1:score,feat2:score} }
+    '''
+    rows = []
+    cols = []
+    data = []
+    colnames = {}
+    for fam, features in sorted(feature_dict.items()):
+        for feat, score in features.items():
+            index = colnames.setdefault(feat, len(colnames))
+            rows.append(fam) #assuming fams are sequential
+            cols.append(index)
+            data.append(score)
+    feat_matrix = sp.csr_matrix((data, (rows, cols)), \
+        shape=(len(feature_dict),len(colnames)))
+    col_list = list(zip(*sorted(colnames.items(),key=lambda x: x[1])))[0]
+    return feat_matrix, col_list
+
+def cluster_kmeans(sparse_m, num_clusters, rownames, list_file, colnames,\
+    prefix, family_modules, module_info, cores=1):
+    '''Kmeans clustering on sparse_m with num_clusters and writes to file
+
+    sparse_m: csr_matrix, shape(n_samples, n_features)
+    modules: dict {mod_num:[info,modules]}
+    num_clusters: int, number of clusters
+    rownames: list of ints, [mod_nums], sequential mod_nums, keeping track of
+        rows of sparse_m
+    colnames: list of str, all domains sequential order to keep track of
+        columns of sparse_m
+    prefix: str, prefix of outfile
+    cores: int, amount of cores to use
+    header: str, header of module file
+    '''
+    print('\nRunning k-means')
+    #outfiles
+    kmeans_pre = '_kmeans_{}_clans'.format(num_clusters)
+    out_mods = prefix + kmeans_pre + '.txt'
+    out_clusts = prefix + kmeans_pre + '_by_clan.txt'
+    out_fams = prefix + kmeans_pre + '_to_family.txt'
+
+
+    #running algorithm
+    kmeans = KMeans(n_clusters=num_clusters, n_init=20, max_iter=1000, \
+        random_state=595, verbose=0, tol=0.000001,n_jobs=cores).fit(sparse_m)
+    print(kmeans)
+    clust_centers = sp.csr_matrix(kmeans.cluster_centers_)
+    labels = kmeans.labels_
+    cluster_dict = defaultdict(list)
+    np.set_printoptions(precision=2)
+    print('Within-cluster sum-of-squares (inertia):', kmeans.inertia_)
+
+    #link each fam to a clan/cluster
+    cluster_dict = defaultdict(list)
+    fam_dict = {}
+    for fam,cl in zip(rownames,labels):
+        cluster_dict[cl].append(fam)
+        fam_dict[fam] = cl
+
+    with open(out_fams,'w') as outf:
+        for cl,fams in sorted(cluster_dict.items()):
+            outf.write('>{}\n{}\n'.format(cl,','.join(map(str,fams))))
+
+    #write new list file with clan added
+    with open(out_mods,'w') as outf, open(list_file,'r') as inf:
+        header=inf.readline().strip()
         outf.write(header+'\tClan\n')
         for line in inf:
             line = line.strip()
@@ -260,23 +374,30 @@ if __name__ == '__main__':
     #fasta_file with >clan to families, file with #clan to modules
     fam_dict,feat_dict,fam_modules,mod_info = read_families(cmd.infile)
 
-    out_sparse_matrix = cmd.infile.split('.txt')[0]+str(cmd.cutoff)+'.npz'
-    if not os.path.isfile(out_sparse_matrix):
-        print('\nCalculating distance matrix')
-        dists = calc_all_dists(feat_dict, cmd.cutoff, cmd.cores)
-        dist_matrix = make_dist_matrix(dists,len(feat_dict),square=True)
-        print('  saving distance_matrix to',out_sparse_matrix)
-        sp.save_npz(out_sparse_matrix, dist_matrix)
-    else:
-        print('\nLoaded distance matrix from',out_sparse_matrix)
-        dist_matrix = sp.load_npz(out_sparse_matrix)
-    print('  {} pairs have a distance below cutoff'.format(\
-        len(dist_matrix.data)))
-
     rownms = sorted(fam_dict.keys())
     prefx = cmd.list_file.split('.txt')[0]
-    run_dbscan(dist_matrix, cmd.dbscan_cutoff, rownms, cmd.list_file, prefx,\
-        cmd.cores, fam_modules, mod_info)
+
+    if cmd.method in [0,1]:
+        feat_matrix, colnames = make_feat_matrix(feat_dict)
+        cluster_kmeans(feat_matrix, cmd.k_clusters, rownms, cmd.list_file,\
+            colnames, prefx, fam_modules, mod_info, cores=cmd.cores)
+
+    if cmd.method in [0,2]:
+        out_sparse_matrix = cmd.infile.split('.txt')[0]+str(cmd.cutoff)+'.npz'
+        if not os.path.isfile(out_sparse_matrix):
+            print('\nCalculating distance matrix')
+            dists = calc_all_dists(feat_dict, cmd.cutoff, cmd.cores)
+            dist_matrix = make_dist_matrix(dists,len(feat_dict),square=True)
+            print('  saving distance_matrix to',out_sparse_matrix)
+            sp.save_npz(out_sparse_matrix, dist_matrix)
+        else:
+            print('\nLoaded distance matrix from',out_sparse_matrix)
+            dist_matrix = sp.load_npz(out_sparse_matrix)
+        print('  {} pairs have a distance below cutoff'.format(\
+            len(dist_matrix.data)))
+
+        run_dbscan(dist_matrix, cmd.dbscan_cutoff, rownms, cmd.list_file,\
+            prefx, cmd.cores, fam_modules, mod_info)
 
     end = time.time()
     t = end-start
