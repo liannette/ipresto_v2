@@ -55,12 +55,12 @@ def get_commands():
         of topics to use for the LDA model", required=True, type=int)
     parser.add_argument("-f", "--min_feat_score", dest="min_feat_score",
         help="Only include features until their scores add up to this number.\
-        Default = 0.9. Can be combined with feat_num, where feat_num features\
+        Default = 0.95. Can be combined with feat_num, where feat_num features\
         are selected or features that add up to min_feat_score",type=float, \
-        default=0.9)
+        default=0.95)
     parser.add_argument("-n", "--feat_num", dest="feat_num",
         help="Include the first feat_num features for each topic, \
-        default = 15.",type=int, default=15)
+        default = 75.",type=int, default=75)
     parser.add_argument("-a", "--amplify", dest="amplify", help="Amplify \
         the dataset in order to achieve a better LDA model. Each BGC will be\
         present amplify times in the dataset. After calculating the LDA model \
@@ -87,7 +87,8 @@ def get_commands():
     parser.add_argument("-C", "--chunksize",default=2000,type=int,help=\
         'The chunksize used to train the model, default = 2000')
     parser.add_argument("-u","--update",help="If provided and a model already\
-        exists, the existing model will be updated with specified parameters",
+        exists, the existing model will be updated with original parameters,\
+        new parameters cannot be passed in the LdaMulticore version.",
         default=False, action="store_true")
     return parser.parse_args()
 
@@ -180,7 +181,7 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
-    lda_topics = lda.print_topics(-1, 50)
+    lda_topics = lda.print_topics(-1, 75)
     topic_num = len(lda_topics)
     #get the topic names from the lda html visualisation
     ldahtml = os.path.join(outfolder, 'lda.html')
@@ -194,8 +195,8 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
                         zip(range(topic_num), nums)}
     else:
         trans = {x:'-' for x in range(topic_num)}
-    filt_features,zero_topics = select_number_of_features(lda_topics,\
-        outfolder,min_f_score,feat_num,trans)
+    filt_features,feat_scores,zero_topics = select_number_of_features(\
+        lda_topics,outfolder,min_f_score,feat_num,trans)
     if len(zero_topics) == num_topics:
         raise SystemExit("All topics are empty.")
     bgcl_dict = {bgc: sum(1 for g in genes if not g == '-') \
@@ -203,16 +204,17 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
         bgcl_dict, plot=plot, amplif=amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
-    t_matches = retrieve_topic_matches(bgc2topic)
+    t_matches = retrieve_topic_matches(bgc2topic, feat_scores)
     top_match_file = os.path.join(outfolder,'matches_per_topic.txt')
     t_matches = write_topic_matches(t_matches, bgc_classes, top_match_file,
         plot=False)
-    t_matches = filter_matches(t_matches, filt_features, min_t_match, \
-        min_feat_match)
+    t_matches = filter_matches(t_matches, feat_scores, filt_features,\
+        min_t_match, min_feat_match)
     top_match_file_filt = top_match_file.split('.txt')[0]+'_filtered.txt'
     write_topic_matches(t_matches, bgc_classes, top_match_file_filt,plot=True)
     bgc_with_topics = retrieve_match_per_bgc(t_matches, bgc_classes, \
         known_subcl,outfolder,plot=True)
+
     #make filtered scatterplot
     lengths = []
     for bgc,val in bgc_with_topics.items():
@@ -224,6 +226,11 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     len_name = os.path.join(outfolder,\
         'len_bgcs_vs_len_topic_match_filtered.pdf')
     plot_topic_matches_lengths(lengths,len_name)
+    #count amount of topics per bgc - filtered
+    tpb_name = os.path.join(outfolder,'topics_per_bgc.pdf')
+    topics_per_bgc = Counter([len(vals) for vals in bgc_with_topics.values()])
+    plot_topics_per_bgc(topics_per_bgc,tpb_name)
+
     if plot:
         bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
             metric='euclidean')
@@ -243,18 +250,23 @@ def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
         score reaches this number
     feat_num: int, maximum amount of features to use
     trans: dict linking lda topics to topic names in ldavis if present
-    filt_features: dict of sets, for each topic the domains to use
+    filt_features: dict of set, for each topic the domains to use
+        {topic: set(feats)}
+    feat_scores: dict of dict: for each topic all features linked to their
+        scores {topic: {feat:score} }
     zero_topics: list, storing topics that are empty
     '''
     out_topics = os.path.join(outfolder, 'topics.txt')
     #to record the features as {topic:[(gene,prob)]}, features are selected
     #until the min_f_score or to feat_num as a maximum
     filt_features = {}
+    feat_scores = {}
     zero_topics = []
     with open(out_topics,'w') as outf:
         outf.write('Topic\tNumber_LDAvis\tTopic_length\tSelected_domains\t'+\
             'Domain_combinations\tScores\n')
         for top, mod in lda_topics:
+            feat_scores[top] = {}
             nums = []
             doms = []
             for m in mod.split(' + '):
@@ -267,6 +279,7 @@ def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
                     break
                 nums.append(num)
                 doms.append(dom)
+                feat_scores[top][dom] = num
             s=[]
             m_len = len([s.append(num) for num in nums \
                 if sum(s) < min_f_score])
@@ -275,12 +288,13 @@ def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
             else:
                 sel = m_len
             filt_features[top] = set(doms[:sel])
-            select_features = ','.join(a+':'+str(b) for a,b in \
-                zip(doms[:sel],nums[:sel]))
+            #write outfile
+            sel_feats = zip(doms[:sel],nums[:sel])
+            select_features = ','.join(a+':'+str(b) for a,b in sel_feats)
             outf.write('{}\t{}\t{}\t{}\t{}\t{}\n'.format(top,trans[top],\
                 sel,select_features,','.join(doms),','.join(map(str,nums))))
     print('  {} empty topics'.format(len(zero_topics)))
-    return(filt_features,zero_topics)
+    return(filt_features,feat_scores,zero_topics)
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
     plot=True, amplif=False):
@@ -290,8 +304,6 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
     Writes file to outfolder/bgc_topics.txt and supplies plots if plot=True
     '''
     print('\nLinking topics to BGCs')
-    #lda[corpus_bow] for unseen documents
-    # doc_lda = lda.get_document_topics(corpus_bow,per_word_topics=True)
     doc_topics = os.path.join(outfolder, 'bgc_topics.txt')
     bgc2topic = {}
     if amplif:
@@ -399,10 +411,12 @@ def link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder):
             outf.write('{}\t{}\n'.format(d_name, dom_top_str))
         #visualise amount of topics per term
 
-def retrieve_topic_matches(bgc2topic):
+def retrieve_topic_matches(bgc2topic, feat_scores):
     '''Turns bgcs with matching topics to topics with matches from bgc
 
     bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
+    feat_scores: {topic:{genes:scores} }, dict of features \w scores for
+        each topic
     topic_matches: {topic:[[prob,[(gene,prob)],bgc]]}
     '''
     #get all topic matches per topic
@@ -410,7 +424,12 @@ def retrieve_topic_matches(bgc2topic):
     for bgc,dc in bgc2topic.items():
         for k,v in dc.items():
             if not k == 'len':
-                newv = v+[bgc]
+                topic_scores = feat_scores.get(k, {}) #in case topic is empty
+                overlap_score = 0
+                for feat in v[1]:
+                    overlap_score += topic_scores.get(feat[0],0)
+                    #get because feat might have very low prob, gets left out
+                newv = v+[bgc,overlap_score]
                 topic_matches[k].append(newv)
     return topic_matches
 
@@ -557,11 +576,11 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
 def write_topic_matches(topic_matches, bgc_classes, outname,plot):
     '''Writes topic matches to a file sorted on length and alphabet
 
-    topic_matches: {topic:[[prob,[(gene,prob)],bgc]]}
+    topic_matches: {topic:[[prob,[(gene,prob)],bgc,overlap_score]]}
     bgc_classes: {bgc: [class1,class2]}
     outname: str, filepath
     '''
-    print('\nWriting filtered matches to {}'.format(outname))
+    print('\nWriting matches to {}'.format(outname))
     #a set of bgc classes
     s_b_c = set([v for vals in bgc_classes.values() for v in vals])
     s_b_c.add('None')
@@ -571,11 +590,11 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
     prevl = {t:len(vals) for t,vals in topic_matches.items()}
     sumfile = outname.split('.txt')[0]+'_summary.txt'
     with open(outname,'w') as outf, open(sumfile,'w') as sumf:
-        sumf.write('Topic\tmatches\tmatches_len>1\tclasses\n')
+        sumf.write('Topic\tmatches\tmatches_len>1\tclasses\tclasses_len>1\n')
         for topic, matches in sorted(topic_matches.items()):
-            classes = Counter()
-            classes_1 = Counter()
-            for p,g,bgc in matches:
+            classes = Counter() #classes for all matches
+            classes_1 = Counter() #classes for matches longer than 1
+            for p,g,bgc,overlap in matches:
                 bgc_class = bgc_classes.get(bgc,['None'])[0]
                 classes.update([bgc_class])
                 try:
@@ -590,13 +609,16 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
                 plotlines_1.loc[topic,count_class] = classes_1[count_class]
             class_str = ','.join([':'.join(map(str,cls)) for cls in \
                 sorted(classes.items())])
+            class1_str = ','.join([':'.join(map(str,cls)) for cls in \
+                sorted(classes_1.items())])
             prevl = len(matches)
             prevl_bigger_1 = sum(classes_1.values())
-            #topicnr #matches #matches>1 classes
+            #topicnr matches matches>1 classes classes>1
             outf.write(\
-            '#Topic {}, matches:{}, matches_len>1:{}, classes:{}\n'.format(\
-                topic,prevl,prevl_bigger_1, class_str))
-            sum_line = [topic, prevl, prevl_bigger_1, class_str]
+                '#Topic {}, matches:{}, matches_len>1:{}'.format(topic,prevl,\
+                prevl_bigger_1) + ', classes:{}, classes_len>1:{}\n'.format(\
+                class_str, class1_str))
+            sum_line = [topic, prevl, prevl_bigger_1, class_str, class1_str]
             sumf.write('{}\n'.format('\t'.join(map(str,sum_line))))
             #sort the matches by length and then by alphabet
             try:
@@ -607,10 +629,10 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
             else:
                 topic_matches[topic] = sorted_matches
                 for match in sorted_matches:
-                    outf.write('{:.3f}\t{}\t{}\t{}\n'.format(match[0], \
-                        ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in \
-                        match[1]]), match[2],\
-                        bgc_classes.get(match[2],['None'])[0]))
+                    outf.write('{:.3f}\t{:.3f}\t{}\t{}\t{}\n'.format(\
+                        match[0], match[3],','.join(\
+                        ['{}:{:.2f}'.format(m[0],m[1]) for m in match[1]]\
+                        ), match[2], bgc_classes.get(match[2],['None'])[0]))
     if plot:
         bplot_name = os.path.join(os.path.split(outname)[0],'topic_stats.pdf')
         barplot_topic_stats(plotlines,bplot_name)
@@ -649,34 +671,47 @@ def barplot_topic_stats(df,outname):
     plt.savefig(outname)
     plt.close()
 
-def filter_matches(topic_matches, topic_features, min_t_match,min_feat_match):
+def filter_matches(topic_matches, feat_scores, filt_features, min_t_match,\
+    min_feat_match):
     '''Filters topic_matches based on cutoffs
 
     topic_matches: {topic:[[prob,(gene,prob)],bgc]}, topic linked to matches
-    topic_features: {topic:set(genes)}, dict of features to use
+    feat_scores: {topic:{genes:scores} }, dict of features \w scores for
+        each topic
+    filt_features: {topic:set(genes)}, dict of sets of feats to use for each
+        topic
     min_t_match: float, minimal score of a topic matching a bgc
     min_feat_match: float, minimal score of a feature matching in a topic in
         a bgc
+    filt_topic_matches: {topic:[[prob,(gene,prob)],bgc,overlap_score]}
     '''
     print('\nFiltering matches')
     filt_topic_matches = defaultdict(list)
     for topic, matches in topic_matches.items():
         # filt_topic_matches[topic] = []
         try:
-            use_feats = topic_features[topic]
+            feats_dict = feat_scores[topic]
+            use_feats = filt_features[topic]
         except KeyError:
             #topic is empty
+            feats_dict = {}
             use_feats = {}
+        else:
+            use_feats = set(feats_dict.keys())
         for match in matches:
             match_p = match[0]
-            bgc = match[2]
+            newfeats = []
+            overlap_score = 0
+            for feat in match[1]:
+                dom_com = feat[0]
+                if dom_com in use_feats and feat[1] >= min_feat_match:
+                    newfeats.append(feat)
+                    overlap_score += feats_dict[dom_com]
             if match_p > min_t_match:
-                newfeats = []
-                for feat in match[1]:
-                    if feat[0] in use_feats and feat[1] >= min_feat_match:
-                        newfeats.append(feat)
                 if newfeats:
-                    filt_topic_matches[topic].append([match_p,newfeats,bgc])
+                    bgc = match[2]
+                    filt_topic_matches[topic].append([match_p,newfeats,bgc,\
+                        overlap_score])
     return filt_topic_matches
 
 def bgc_topic_heatmap(bgc_with_topic, bgc_classes, topic_num, outfolder,
