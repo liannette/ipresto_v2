@@ -27,6 +27,7 @@ if __name__ == '__main__':
                 bgc_dct[bgc] = mod_nums
                 for mod_num in mod_nums:
                     mod_dct[mod_num].append(bgc)
+
     with open(mod_info,'r') as inf:
         modules = {}
         #{mod_num:[info]}
@@ -47,6 +48,7 @@ if __name__ == '__main__':
                     pass
                 else:
                     outf.write('{}\t{}\n'.format(mod_num,'\t'.join(mod_info)))
+
     with open(out_mods,'w') as outf:
         for mod_num,bgcs in sorted(mod_dct.items()):
             try:
@@ -60,6 +62,8 @@ if __name__ == '__main__':
                     mod_info[1],mod_info[2])+'cutoff {}'.format(mod_info[3]))
                 if len(mod_info) == 6:
                     outf.write(', subcluster-family {}\n'.format(mod_info[5]))
+                elif len(mod_info) == 7:
+                    outf.write(', subcluster-clan {}\n'.format(mod_info[6]))
                 else:
                     outf.write('\n')
                 outf.write('#{}\n'.format(mod_info[4]))
