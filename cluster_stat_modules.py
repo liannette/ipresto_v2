@@ -143,7 +143,7 @@ def cluster_hierarchical(data):
     print(clust)
 
 def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
-    prefix, cores=1):
+    prefix, header, cores=1):
     '''Kmeans clustering on sparse_m with num_clusters and writes to file
 
     sparse_m: csr_matrix, shape(n_samples, n_features)
@@ -155,6 +155,7 @@ def cluster_kmeans(sparse_m, modules, num_clusters, rownames, colnames, \
         columns of sparse_m
     prefix: str, prefix of outfile
     cores: int, amount of cores to use
+    header: str, header of module file
     '''
     print('\nRunning k-means')
     #outfiles
@@ -217,7 +218,8 @@ def jac_dist_matrix(sparse_m):
     '''
     
 
-def run_dbscan(sparse_m, dist_cutoff, modules, rownames, prefix, cores):
+def run_dbscan(sparse_m, dist_cutoff, modules, rownames, prefix, cores,\
+    header):
     '''
     Nearest neighbour algorithm with jaccard distance
 
@@ -229,6 +231,7 @@ def run_dbscan(sparse_m, dist_cutoff, modules, rownames, prefix, cores):
         rows of sparse_m
     prefix: str, prefix of outfile
     cores: int, amount of cores to use
+    header: str, header of module file
     '''
     # print('\nCalculating distance matrix')
     # dist_m = calc_jacc_index_matrix(sparse_m)
@@ -319,10 +322,10 @@ if __name__ == '__main__':
 
     if cmd.method in [0,1]:
         cluster_kmeans(sparse_feat_matrix, modules, cmd.k_clusters, rownames,\
-            colnames, out_prefix, cores=cmd.cores)
+            colnames, out_prefix, header=header, cores=cmd.cores)
     if cmd.method in [0,2]:
         run_dbscan(sparse_feat_matrix, cmd.neighbour_cutoff, modules, rownames,\
-            out_prefix, cmd.cores)
+            out_prefix, cmd.cores, header=header)
 
     end = time.time()
     t = end-start
