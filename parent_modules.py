@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''
-Find parent modules in statistical method modules.
+Find parent modules in families of statistical method modules.
 Author: Joris Louwen
 '''
 import os
@@ -125,7 +125,6 @@ if __name__ == '__main__':
     out_by_fam = cmd.infile.split('.txt')[0] + '_reduced.txt'
     out_list = cmd.infile.split('_by_family.txt')[0] + '_reduced.txt'
     fam_dict,fam_modules,mod_info = read_families(cmd.infile)
-    # print(fam_modules)
     #check intersection between all, is intersection length of smaller one?
     #then the bigger is parents
     dels_all = []
@@ -138,6 +137,7 @@ if __name__ == '__main__':
         # results.append(result)
     pool = Pool(cmd.cores)
     results = pool.map(find_redundant_modules_yield, info)
+
     dels_dict = {fam:set(dels) for fam,dels in results}
     with open(out_list,'w') as outf, open(cmd.list_file,'r') as inf:
         header=inf.readline()
@@ -172,18 +172,6 @@ if __name__ == '__main__':
 
     print('Removed {} redundant modules'.format(sum(\
         [len(vals) for vals in dels_dict.values()])))
-
-
-    # print(fam_dict)
-    #calc clans?
-    # fam_feats = {}
-    # for fam,val in fam_dict.items():
-        # feat = val[2]
-        # feats = [tuple(dom.split(':')) for dom in \
-            # feat.split('#Features: ')[1].split(', ')]
-        # fam_feats[fam] = feats
-    # fam_pairs = combinations(fam_feats.keys())
-    
 
     end = time.time()
     t = end-start
