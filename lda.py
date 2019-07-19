@@ -356,9 +356,9 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
                 topd[top][1] = s_genes
                 topd[top].append(overlap_score)
                 genes = ','.join(['{}:{:.2f}'.format(g,p) for g,p in s_genes])
-                string='topic={}\n\tp={}\n\toverlap_score={}\n\tlen='.format(\
+                string='topic={}\n\tp={:.3f}\n\toverlap_score={:.3f}'.format(\
                     top, info[0], overlap_score) +\
-                    '{}\n\tgenes={}\n'.format(len(info[1]), genes)
+                    '\n\tlen={}\n\tgenes={}\n'.format(len(info[1]), genes)
                 outf.write(string)
             bgc2topic[bgc] = topd
     # if plot:
@@ -484,8 +484,8 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder,\
                 for m_known in matches_known:
                     known_subcl_matches[m_known[0]].append(m_known[1:])
             for match in sorted(info, key=lambda x: x[1],reverse=True):
-                outf.write('{}\t{:.3f}\t{}\t{}\n'.format(match[0],match[1],\
-                    match[3], ','.join(\
+                outf.write('{}\t{:.3f}\t{:.3f}\t{}\n'.format(match[0],\
+                    match[1], match[3], ','.join(\
                     ['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
     if known_subcl:
         subcl_out = os.path.join(outfolder, 'known_subcluster_matches.txt')
@@ -591,7 +591,7 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
 
                     matches_overlap.append([k_sub[0],round(overlap,3),\
                         l_overlap,bgc,bgc_class,match[0],round(match[1],3),\
-                        match[3],overl_d, non_overl_d])
+                        round(match[3],3),overl_d, non_overl_d])
     return matches_overlap
 
 def write_topic_matches(topic_matches, bgc_classes, outname,plot):
