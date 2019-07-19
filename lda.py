@@ -608,9 +608,9 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
                 plotlines.loc[topic,count_class] = count
                 plotlines_1.loc[topic,count_class] = classes_1[count_class]
             class_str = ','.join([':'.join(map(str,cls)) for cls in \
-                sorted(classes.items())])
+                sorted(classes.items(), key=itemgetter(1,0))])
             class1_str = ','.join([':'.join(map(str,cls)) for cls in \
-                sorted(classes_1.items())])
+                sorted(classes_1.items(), key=itemgetter(1,0)])
             prevl = len(matches)
             prevl_bigger_1 = sum(classes_1.values())
             #topicnr matches matches>1 classes classes>1
