@@ -80,8 +80,9 @@ def get_commands():
         and BGC identifiers in the first column. Subclusters are comma \
         separated genes represented as domains. Multiple domains in a gene \
         are separated by semi-colon.")
-    parser.add_argument("--min_genes", help="Minimum length (not counting \
-        genes) of a BGC to be included in the analysis",default=1,type=int)
+    parser.add_argument("--min_genes", help="Minimum length (not counting\
+        empty genes) of a BGC to be included in the analysis",default=1,\
+        type=int)
     parser.add_argument("-I","--iterations",help="Amount of iterations for\
         training the LDA model, default = 1000",default=1000, type=int)
     parser.add_argument("-C", "--chunksize",default=2000,type=int,help=\
@@ -99,7 +100,7 @@ def remove_infr_doms_str(clusdict, m_gens, verbose):
     m_gens: int, minimal distinct genes a cluster must have to be included
     verbose: bool, if True print additional info
 
-    Deletes clusters with 1 unique gene
+    Deletes clusters with less than m_gens unique genes
     '''
     print('\nRemoving domain combinations that occur less than 3 times')
     domcounter = Counter()
@@ -136,12 +137,21 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
     outfolder: str, filepath
     ldavis: bool, if true save LDAvis visualisation of model
     '''
-    dict_lda = Dictionary(domlist)
-    dict_lda.filter_extremes(no_below=no_below, no_above=no_above)
+    model = os.path.join(outfolder,'lda_model')
+    #save the token ids the model will be build on.
+    dict_file = model+'.dict'
+    if not os.path.isfile(dict_file):
+        dict_lda = Dictionary(domlist)
+        dict_lda.filter_extremes(no_below=no_below, no_above=no_above)
+        dict_lda.save(dict_file)
+    else:
+        dict_lda = Dictionary.load(dict_file)
+        dict_lda.add_documents(domlist)
+        #does not matter as '-' will not be in the model but for niceness
+        dict_lda.filter_tokens(bad_ids=[dict_lda.token2id['-']])
     print('\nConstructing LDA model with {} BGCs and:'.format(len(domlist)),\
         dict_lda)
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
-    model = os.path.join(outfolder,'lda_model')
     #to allow for x iterations of chunksize y
     passes = ceil(iters*chnksize/len(domlist))
     #gamma_threshold based on Blei et al. 2010
@@ -177,7 +187,7 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
 
 def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     min_f_score, bgcs, outfolder, bgc_classes, num_topics, amplif=False,\
-    min_t_match=0.1, min_feat_match=0.3, plot=True, known_subcl=False):
+    min_t_match=0.05, min_feat_match=0.3, plot=True, known_subcl=False):
     '''Analyses the topics in the bgcs
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
@@ -202,7 +212,7 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     bgcl_dict = {bgc: sum(1 for g in genes if not g == '-') \
         for bgc,genes in bgc_dict.items()}
     bgc2topic = link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder,\
-        bgcl_dict, plot=plot, amplif=amplif)
+        bgcl_dict, feat_scores, plot=plot, amplif=amplif)
     link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder)
     t_matches = retrieve_topic_matches(bgc2topic, feat_scores)
     top_match_file = os.path.join(outfolder,'matches_per_topic.txt')
@@ -297,8 +307,8 @@ def select_number_of_features(lda_topics,outfolder,min_f_score,feat_num,
     return(filt_features,feat_scores,zero_topics)
 
 def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
-    plot=True, amplif=False):
-    '''Returns dict of {bgc:{topic_num:[prob,[(gene,prob)]]}}
+    feat_scores, plot=True, amplif=False):
+    '''Returns dict of {bgc:{topic_num:[prob,[(gene,prob)],overlap_score]}}
     
     
     Writes file to outfolder/bgc_topics.txt and supplies plots if plot=True
@@ -313,7 +323,7 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
         bgc_bows = zip(bgcs,corpus_bow)
     with open(doc_topics,'w') as outf:
         for bgc, bgc_bow in bgc_bows:
-            doc_doms = lda.get_document_topics(bgc_bow,per_word_topics=True)
+            doc_doms = lda[bgc_bow]
             #doc_doms consists of three lists:
             #1 topics 2 word2topic 3 word2topic with probability
             topd = {tpc:[prob,[]] for tpc,prob in doc_doms[0]}
@@ -333,11 +343,22 @@ def link_bgc_topics(lda, dict_lda, corpus_bow, bgcs, outfolder, bgcl_dict,
             outf.write('len={}\n'.format(bgcl_dict[bgc]))
             for top, info in sorted(topd.items(),key=lambda x: x[1][0],\
                 reverse=True):
-                s_genes = sorted(info[1],key=lambda x: x[1],reverse=True)
-                topd[top][1] = s_genes #sort matching genes - high to low p
+                #sort matching genes - high to low feature score in topic
+                topic_scores = feat_scores.get(top, {})
+                overlap_score = 0
+                for feat in info[1]:
+                    overlap_score += topic_scores.get(feat[0],0)
+                    #get because feat might have very low prob, gets left out
+                gene_order = {feat[0]:i for i,feat in enumerate(sorted(\
+                    topic_scores.items(),key=itemgetter(1),reverse=True))}
+                s_genes = sorted(info[1],key=lambda x: gene_order.get(x[0],\
+                    len(gene_order)))
+                topd[top][1] = s_genes
+                topd[top].append(overlap_score)
                 genes = ','.join(['{}:{:.2f}'.format(g,p) for g,p in s_genes])
-                string='topic={}\n\tp={}\n\tlen={}\n\tgenes={}\n'.format(\
-                    top,info[0], len(info[1]), genes)
+                string='topic={}\n\tp={}\n\toverlap_score={}\n\tlen='.format(\
+                    top, info[0], overlap_score) +\
+                    '{}\n\tgenes={}\n'.format(len(info[1]), genes)
                 outf.write(string)
             bgc2topic[bgc] = topd
     # if plot:
@@ -414,7 +435,8 @@ def link_genes2topic(lda, dict_lda, corpus_bow, bgcs, outfolder):
 def retrieve_topic_matches(bgc2topic, feat_scores):
     '''Turns bgcs with matching topics to topics with matches from bgc
 
-    bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)]]}}
+    bgc2topic: dict of {bgc:{'len':bgc_len,topic_num:[prob,[(gene,prob)],
+        overlap_score]}}
     feat_scores: {topic:{genes:scores} }, dict of features \w scores for
         each topic
     topic_matches: {topic:[[prob,[(gene,prob)],bgc]]}
@@ -424,12 +446,8 @@ def retrieve_topic_matches(bgc2topic, feat_scores):
     for bgc,dc in bgc2topic.items():
         for k,v in dc.items():
             if not k == 'len':
-                topic_scores = feat_scores.get(k, {}) #in case topic is empty
-                overlap_score = 0
-                for feat in v[1]:
-                    overlap_score += topic_scores.get(feat[0],0)
-                    #get because feat might have very low prob, gets left out
-                newv = v+[bgc,overlap_score]
+                ov_score = v.pop(-1)
+                newv = v+[bgc,ov_score]
                 topic_matches[k].append(newv)
     return topic_matches
 
@@ -438,16 +456,18 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder,\
     '''
     Turns topics with matches back into bgc with matches and writes to file
 
-    topic_matches: {topic:[[prob,(gene,prob),bgc]]}
+    topic_matches: {topic:[[prob,(gene,prob),bgc,overlap_score]]}
     bgc_classes: {bgc:[class1,class2]}
     known_subcl: {bgc: [[info,domains]]}
     bgc2topic: dict of {bgc:[[topic_num,prob,[(gene,prob)]]]}
+
+    Also compares for each match if it overlaps with a known subcluster
     '''
     known_subcl_matches = defaultdict(list)
     bgc2topic = defaultdict(list)
     for topic,info in topic_matches.items():
         for match in info:
-            bgc2topic[match[2]].append([topic]+match[:2])
+            bgc2topic[match[2]].append([topic]+match[:2]+[match[3]])
     with open(os.path.join(outfolder, 'bgc_topics_filtered.txt'),'w') as outf:
         for bgc,info in sorted(bgc2topic.items()):
             bgc_class = bgc_classes.get(bgc,['None'])[0]
@@ -464,8 +484,9 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder,\
                 for m_known in matches_known:
                     known_subcl_matches[m_known[0]].append(m_known[1:])
             for match in sorted(info, key=lambda x: x[1],reverse=True):
-                outf.write('{}\t{:.3f}\t{}\n'.format(match[0],match[1],\
-                ','.join(['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
+                outf.write('{}\t{:.3f}\t{}\t{}\n'.format(match[0],match[1],\
+                    match[3], ','.join(\
+                    ['{}:{:.2f}'.format(m[0],m[1]) for m in match[2]])))
     if known_subcl:
         subcl_out = os.path.join(outfolder, 'known_subcluster_matches.txt')
         with open(subcl_out,'w') as outf:
@@ -530,7 +551,7 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
     known_subcl: {bgc: [[info,domains]]
     bgc: str, bgcname
     bgc_class: str, class of bgc
-    matches: [[topic_num,prob,[(gene,prob)]]]
+    matches: [[topic_num,prob,[(gene,prob)],overlap_score]]
     cutoff: float, overlap cutoff used for reporting
     matches_overlap: [[first_info_element,%overlap,len_overlap,bgc,bgc_class,
         topic_num,prob,overlapping_genes,non_overlapping_genes]]
@@ -569,8 +590,8 @@ def compare_known_subclusters(known_subcl, bgc, bgc_class, matches,cutoff):
                         for g,p in g_list if not g in overl_d_set]))
 
                     matches_overlap.append([k_sub[0],round(overlap,3),\
-                        l_overlap,bgc,bgc_class,match[0],round(match[1],4),\
-                        overl_d, non_overl_d])
+                        l_overlap,bgc,bgc_class,match[0],round(match[1],3),\
+                        match[3],overl_d, non_overl_d])
     return matches_overlap
 
 def write_topic_matches(topic_matches, bgc_classes, outname,plot):
@@ -607,10 +628,11 @@ def write_topic_matches(topic_matches, bgc_classes, outname,plot):
             for count_class,count in classes.items():
                 plotlines.loc[topic,count_class] = count
                 plotlines_1.loc[topic,count_class] = classes_1[count_class]
+            #sort classes
             class_str = ','.join([':'.join(map(str,cls)) for cls in \
-                sorted(classes.items(), key=itemgetter(1,0))])
+                sorted(classes.items(), key=lambda x: (-x[1],x[0]))])
             class1_str = ','.join([':'.join(map(str,cls)) for cls in \
-                sorted(classes_1.items(), key=itemgetter(1,0)])
+                sorted(classes_1.items(), key=lambda x: (-x[1],x[0]))])
             prevl = len(matches)
             prevl_bigger_1 = sum(classes_1.values())
             #topicnr matches matches>1 classes classes>1
@@ -675,7 +697,8 @@ def filter_matches(topic_matches, feat_scores, filt_features, min_t_match,\
     min_feat_match):
     '''Filters topic_matches based on cutoffs
 
-    topic_matches: {topic:[[prob,(gene,prob)],bgc]}, topic linked to matches
+    topic_matches: {topic:[[prob,(gene,prob)],bgc,overlap_score]}, topic
+        linked to matches
     feat_scores: {topic:{genes:scores} }, dict of features \w scores for
         each topic
     filt_features: {topic:set(genes)}, dict of sets of feats to use for each
@@ -707,7 +730,7 @@ def filter_matches(topic_matches, feat_scores, filt_features, min_t_match,\
                 if dom_com in use_feats and feat[1] >= min_feat_match:
                     newfeats.append(feat)
                     overlap_score += feats_dict[dom_com]
-            if match_p > min_t_match:
+            if match_p > min_t_match and overlap_score > 0.15:
                 if newfeats:
                     bgc = match[2]
                     filt_topic_matches[topic].append([match_p,newfeats,bgc,\
@@ -888,6 +911,7 @@ if __name__ == '__main__':
         bgc_classes_dict = {bgc:'None' for bgc in bgcs}
 
     bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False)
+
     if cmd.amplify:
         bgc_items = []
         for bgc in bgcs.items():
