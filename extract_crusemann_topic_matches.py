@@ -15,8 +15,7 @@ python3 extract_crusemann_topic_matches.py -i bgc_topic_filtered.txt
 
 import argparse
 from collections import OrderedDict, Counter, defaultdict
-from glob import glob, iglob
-from itertools import combinations, product, islice, chain
+from itertools import groupby
 from math import floor, log10
 from multiprocessing import Pool, cpu_count
 from operator import itemgetter
@@ -37,6 +36,43 @@ def get_commands():
     parser.add_argument('-o','--out_file',help='Output file',required=True)
     return parser.parse_args()
 
+def read_matches(infile):
+    '''Read bgc_topics_filtered file to dict {bgc:[[matches]]}
+
+    infile: str, filepath of bgc_topics_filtered file
+    '''
+    matches = defaultdict(list)
+    with open(infile, 'r') as inf:
+        #bval is true if lines are header, false otherwise
+        for bval, lines in groupby(inf,key=lambda line: line.startswith('>')):
+            if bval:
+                bgc = next(lines).strip()[1:]
+            else:
+                for line in lines:
+                    if not line[0] == 'c' and not line[0] == 'k':
+                        #ignore class and known_subcluster lines
+                        line = line.strip().split('\t')
+                        ####apply some filtering here
+                        matches[bgc].append(line)
+    return matches
+
+def link_matches_to_strain(bgc_matches, strains):
+    '''Write matrix of topic presence/absence for each strain
+
+    bgc_matches: dict of {bgc: [[matches]]}
+    strains: dict of {id: accession}
+    '''
+    strain_set = set()
+    for bgc, matches in bgc_matches.items():
+        strain_id = bgc.split('.')[0].split('_')[0]
+        
+        strain_set.add(strain_id)
+    print(sorted(strain_set),len(strain_set))
+    print(sorted(strains),len(strains))
+    non_over = [st for st in strain_set if st not in strains]
+    print(sorted(non_over),len(non_over))
+    
+
 if __name__ == '__main__':
     cmd = get_commands()
 
@@ -46,6 +82,6 @@ if __name__ == '__main__':
             line = line.strip().split(',')
             if len(line)==2:
                 strain2acc[line[0]] = line[1]
-        print(strain2acc)
 
-    
+    bgc2matches = read_matches(cmd.in_file)
+    link_matches_to_strain(bgc2matches, strain2acc)
