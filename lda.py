@@ -91,6 +91,11 @@ def get_commands():
         exists, the existing model will be updated with original parameters,\
         new parameters cannot be passed in the LdaMulticore version.",
         default=False, action="store_true")
+    parser.add_argument('-r', '--run_on_existing_model', help='Run the input\
+        bgc file on an existing model. Provide here the location of the\
+        model. In that location there should be also model.dict,\
+        model.expElogbeta.npy, model.id2word, model.state,\
+        model.state.sstats.npy', required = False, default=False)
     return parser.parse_args()
 
 def remove_infr_doms_str(clusdict, m_gens, verbose):
@@ -146,9 +151,6 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
         dict_lda.save(dict_file)
     else:
         dict_lda = Dictionary.load(dict_file)
-        dict_lda.add_documents(domlist)
-        #does not matter as '-' will not be in the model but for niceness
-        dict_lda.filter_tokens(bad_ids=[dict_lda.token2id['-']])
     print('\nConstructing LDA model with {} BGCs and:'.format(len(domlist)),\
         dict_lda)
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
@@ -184,6 +186,35 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder, \
         print('  saving visualisation to html')
         pyLDAvis.save_html(vis, visname)
     return lda, dict_lda, corpus_bow
+
+def run_lda_from_existing(existing_model, domlist, no_below=1, no_above=0.5):
+    '''
+    Returns existing LDA model with the Dictionary and the corpus.
+
+    existing_model: str, filepath to lda model
+    domlist: list of list of str, list of the bgc domain-combinations
+    no_below: int, domain-combinations that occur in less than no_below
+        bgcs will be removed
+    no_above: float, remove domain-combinations that occur in more than
+        no_above fraction of the dataset
+    '''
+    model = existing_model
+    #load the token ids the model is build on.
+    dict_file = existing_model+'.dict'
+    dict_lda = Dictionary.load(dict_file)
+
+    corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
+    lda = LdaMulticore.load(existing_model)
+    print('Loaded existing LDA model')
+    print('Applying existing LDA model on {} BGCs with'.format(len(domlist)),\
+        dict_lda)
+    # cm = CoherenceModel(model=lda, corpus=corpus_bow, dictionary=dict_lda,\
+        # coherence='c_v', texts=domlist)
+    # coherence = cm.get_coherence()
+    # print('Coherence: {}, num_topics: {}'.format(coherence, num_topics))
+
+    return lda, dict_lda, corpus_bow
+
 
 def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     min_f_score, bgcs, outfolder, bgc_classes, num_topics, amplif=False,\
@@ -223,7 +254,7 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     top_match_file_filt = top_match_file.split('.txt')[0]+'_filtered.txt'
     write_topic_matches(t_matches, bgc_classes, top_match_file_filt,plot=True)
     bgc_with_topics = retrieve_match_per_bgc(t_matches, bgc_classes, \
-        known_subcl,outfolder,plot=True)
+        known_subcl,outfolder,plot=plot)
 
     #make filtered scatterplot
     lengths = []
@@ -929,10 +960,19 @@ if __name__ == '__main__':
     else:
         known_subclusters = False
 
-    lda, lda_dict, bow_corpus = run_lda(dom_list, no_below=1, no_above=0.5, \
-        num_topics=cmd.topics, cores=cmd.cores, outfolder=cmd.out_folder, \
-        iters=cmd.iterations, chnksize=cmd.chunksize,update_model=cmd.update,\
-        ldavis=cmd.visualise)
+    if not cmd.run_on_existing_model:
+        lda, lda_dict, bow_corpus = run_lda(dom_list, no_below=1,\
+            no_above=0.5, num_topics=cmd.topics, cores=cmd.cores,\
+            outfolder=cmd.out_folder, iters=cmd.iterations,\
+            chnksize=cmd.chunksize, update_model=cmd.update,\
+            ldavis=cmd.visualise)
+    else:
+        with open(log_out,'w') as outf:
+            outf.write('\nUsing model from {}'.format(\
+                cmd.run_on_existing_model))
+        lda, lda_dict, bow_corpus = run_lda_from_existing(\
+            cmd.run_on_existing_model, dom_list, no_below=1, no_above=0.5)
+
     process_lda(lda, lda_dict, bow_corpus, modules, cmd.feat_num, bgcs,
         cmd.min_feat_score, bgclist, cmd.out_folder, bgc_classes_dict, \
         num_topics=cmd.topics, amplif=cmd.amplify, plot=cmd.plot, \
