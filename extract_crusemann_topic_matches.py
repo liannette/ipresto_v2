@@ -31,7 +31,21 @@ def get_commands():
         matches for the crusemann bgcs and group them per strain by topic.")
     parser.add_argument("-i", "--in_file", help="Input file containing topic\
         matches per bgc in fasta like format", required=True)
-    return parser.parse_args
+    parser.add_argument('-s','--strain_ids_file',help='Input file linking\
+        strain ids to accessions, "id, accession" on every line',\
+        required=True)
+    parser.add_argument('-o','--out_file',help='Output file',required=True)
+    return parser.parse_args()
 
 if __name__ == '__main__':
+    cmd = get_commands()
+
+    strain2acc = {}
+    with open(cmd.strain_ids_file, 'r') as inf:
+        for line in inf:
+            line = line.strip().split(',')
+            if len(line)==2:
+                strain2acc[line[0]] = line[1]
+        print(strain2acc)
+
     
