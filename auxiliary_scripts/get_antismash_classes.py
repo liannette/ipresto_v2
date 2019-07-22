@@ -53,7 +53,7 @@ def process_gbks(input_folder, output_file, exclude_contig_edge,\
     print("\nRetreiving classes from gbk files.")
     files = iglob(os.path.join(input_folder, "*.gbk"))
     done = []
-    pool = Pool(cores, maxtasksperchild=20)
+    pool = Pool(cores, maxtasksperchild=250)
     for file_path in files:
         pool.apply_async(convert_gbk2fasta, args=(file_path, True, verbose),\
             callback=lambda x: done.append(x))
@@ -95,7 +95,7 @@ def convert_gbk2fasta(file_path, exclude_contig_edge, verbose):
                                     "contig edge"))
                             return
             if "product" in feature.qualifiers:
-                product = feature.qualifiers.get('product','None')
+                product = feature.qualifiers.get('product',['None'])[0]
                 return name,product
     return
 
