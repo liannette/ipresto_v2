@@ -143,15 +143,15 @@ def create_decoy_matrix2(motif_matrix, motif_names, strains_used):
     motif_names: list of str, all used motif names
     strains_used: list of str, strains that are used
 
-    Shuffles the motif_names and then for each motif it fills the matrix
-    again by sampling the strains that do not have their original length yet.
-    In this way it is random (shuffling the motifs and choosing random
-    strains) while keeping same amount of motifs per strain and the same
-    present motifs.
+    Sort motifs from high to low presence and then for each motif it fills
+    the matrix again by sampling the strains that do not have their original
+    length yet. In this way it is semi random: choosing randomly the strains
+    while keeping same amount of motifs per strain and the same
+    present motifs, but the motifs have to be sorted for it to converge.
 
-    Now strong bias for highly occurring motifs to go to strains that have
-    little motifs. Counteract by providing weights for how many values a
-    strain needs (needs more, higher weight)
+    Two problems: it only works when having weights for the bigger strains,
+    and scrambling rows/colomns with almost all 1-s has little effect on
+    end distribution (they are really similar)
     '''
     print('\nScrambling motif matrix')
     #scramble all the ones across strains and collect in decoy
@@ -187,18 +187,22 @@ def create_decoy_matrix2(motif_matrix, motif_names, strains_used):
         try:
             # scrambled_strains = random.sample(possible_strains, k=length)
             scrambled_strains = list(np.random.choice(possible_strains,\
-                size=length, replace=False,p=new_weights)) #, p=new_weights
+                size=length, replace=False, p=new_weights)) #, p=new_weights
         except ValueError:
             create_decoy_matrix2(motif_matrix, motif_names, strains_used)
         # print(len(scrambled_strains))
         j=0
         while scrambled_strains == motif_dict[motif]:
             print(motif,'while_loop')
-            if j==10:
+            if j>=10:
                 #probably this version is only option
                 create_decoy_matrix2(motif_matrix, motif_names, strains_used)
-            scrambled_strains = list(np.random.choice(possible_strains,\
-                size=length, replace=False, p=new_weights)) #, p=new_weights
+            try:
+                # scrambled_strains = random.sample(possible_strains, k=length)
+                scrambled_strains = list(np.random.choice(possible_strains,\
+                    size=length, replace=False, p=new_weights)) #, p=new_weights
+            except ValueError:
+                create_decoy_matrix2(motif_matrix, motif_names, strains_used)
             j+=1
         for scr_strain in scrambled_strains:
             # print(scr_strain,motif)
