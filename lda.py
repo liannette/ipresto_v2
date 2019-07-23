@@ -220,6 +220,9 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     min_f_score, bgcs, outfolder, bgc_classes, num_topics, amplif=False,\
     min_t_match=0.05, min_feat_match=0.3, plot=True, known_subcl=False):
     '''Analyses the topics in the bgcs
+
+    bgc_dict: dict of {bgc:[domain_combinations]}
+    bgcs: (amplified) list of bgc names
     '''
     #this is a list of tuple (topic_num, 'features_with_scores')
     lda_topics = lda.print_topics(-1, 75)
@@ -258,19 +261,29 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
 
     #make filtered scatterplot
     lengths = []
+    topics_per_bgc = [] #count amount of topics per bgc
     for bgc,val in bgc_with_topics.items():
+        len_topics = 0
         bgclen = bgcl_dict[bgc]
         for match in val:
             probs = list(zip(*match[2]))[1]
             probs = [1 if p<1 else round(p) for p in probs]
+            if len(probs)>1 or probs[0] > 1:
+                #only count matches longer than 1
+                len_topics += 1
             lengths.append((bgclen,sum(probs)))
+        topics_per_bgc.append(len_topics)
+
     len_name = os.path.join(outfolder,\
         'len_bgcs_vs_len_topic_match_filtered.pdf')
     plot_topic_matches_lengths(lengths,len_name)
     #count amount of topics per bgc - filtered
-    tpb_name = os.path.join(outfolder,'topics_per_bgc.pdf')
-    topics_per_bgc = Counter([len(vals) for vals in bgc_with_topics.values()])
-    plot_topics_per_bgc(topics_per_bgc,tpb_name)
+    tpb_name = os.path.join(outfolder,'topics_per_bgc_filtered.pdf')
+    #add all the BGCs that do not have a match
+    bgc_with_matches = set(bgc_with_topics.keys())
+    topics_per_bgc += [0 for bgc in set(bgcs) if bgc not in bgc_with_matches]
+    topics_per_bgc_counts = Counter(topics_per_bgc)
+    plot_topics_per_bgc(topics_per_bgc_counts,tpb_name)
 
     if plot:
         bgc_topic_heatmap(bgc_with_topics, bgc_classes, topic_num, outfolder,\
