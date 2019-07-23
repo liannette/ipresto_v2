@@ -35,9 +35,14 @@ def get_commands():
         strain ids to accessions, "id, accession" on every line',\
         required=True)
     parser.add_argument('-o','--out_file',help='Output file',required=True)
+    parser.add_argument('-n','--no_filtering',help='Do not require matches\
+        to contain at least two genes',action='store_true', default=False)
+    parser.add_argument('-c','--clans',action='store_true',default=False,\
+        help='Toggle if input is a file of subclusters clustered into clans,\
+            if so also toggle --no_filtering')
     return parser.parse_args()
 
-def read_matches(infile):
+def read_matches(infile, dont_filter_matches=False):
     '''Read bgc_topics_filtered file to dict {bgc:[[matches]]}
 
     infile: str, filepath of bgc_topics_filtered file
@@ -58,12 +63,17 @@ def read_matches(infile):
                     if not line[0] == 'c' and not line[0] == 'k':
                         #ignore class and known_subcluster lines
                         line = line.strip().split('\t')
-                        ####only consider matches of 2 genes or more
-                        feats = [tuple(f.split(':')) for f in \
-                            line[-1].split(',')]
-                        if len(feats) > 1 or round(float(feats[0][1])) > 1:
+                        if dont_filter_matches:
                             matches[bgc].append(line)
                             i+=1
+                            
+                        else:
+                            #only consider matches of 2 genes or more
+                            feats = [tuple(f.split(':')) for f in \
+                                line[-1].split(',')]
+                            if len(feats) >1 or round(float(feats[0][1])) > 1:
+                                matches[bgc].append(line)
+                                i+=1
                 if i != 0:
                     match_per_bgc.append(i)
                     total_matches += i
@@ -75,7 +85,7 @@ def read_matches(infile):
     print('  {} BGCs without any match'.format(zeros))
     return matches
 
-def link_matches_to_strain(bgc_matches, strains, outfile):
+def link_matches_to_strain(bgc_matches, strains, outfile, clans=False):
     '''Write matrix of topic presence/absence for each strain
 
     bgc_matches: dict of {bgc: [[matches]]}
@@ -87,9 +97,15 @@ def link_matches_to_strain(bgc_matches, strains, outfile):
     strain_dict = defaultdict(set)
     for bgc, matches in bgc_matches.items():
         strain_id = bgc.split('.')[0].split('_')[0]
-        strain_acc = strains[strain_id]
+        try:
+            strain_acc = strains[strain_id]
+        except KeyError:
+            continue
         for match in matches:
-            topic = match[0] #topic id
+            if clans:
+                topic = match[-1]
+            else:
+                topic = match[0] #topic id
             topic_dict[topic].add(strain_acc)
             strain_dict[strain_acc].add(topic)
     topics_per_strain = [len(vals) for vals in strain_dict.values()]
@@ -126,5 +142,6 @@ if __name__ == '__main__':
     strain2acc['AZWM01000001'] = 'CNT796'
     strain2acc['AZWP01000001'] = 'CNS103'
 
-    bgc2matches = read_matches(cmd.in_file)
-    link_matches_to_strain(bgc2matches, strain2acc, cmd.out_file)
+    bgc2matches = read_matches(cmd.in_file, cmd.no_filtering)
+    link_matches_to_strain(bgc2matches, strain2acc, cmd.out_file,\
+        clans=cmd.clans)
