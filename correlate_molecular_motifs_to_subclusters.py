@@ -87,7 +87,7 @@ def filter_motif_dict(motif_dict):
         if len(motifs) > 1}
     return filtered_motifs
 
-def make_scoring_matrix(m_motifs, s_motifs, m_m_names, s_m_names):
+def make_scoring_matrix(m_motifs, s_motifs, m_m_names, s_m_names, strains_used):
     '''Returns list of tuples [(m_motif, s_motif, score)]
 
     m_motifs, s_motifs: {strain:[present_motifs]} m for molecular-and s
@@ -98,8 +98,6 @@ def make_scoring_matrix(m_motifs, s_motifs, m_m_names, s_m_names):
     Score is +10 is both present in a strain, +1 if both absent, 0 if the
     s_motif is there but not m_motif, -10 if m_motif is there but not s_motif
     '''
-    #only compare strains present in both matrices
-    strains_used = set(m_motifs) & set(s_motifs)
     #keep track of score as dict of dict {m_motif:{s_motif:score}}
     scoring_matrix = {m_m:defaultdict(int) for m_m in m_m_names}
     for strain in strains_used:
@@ -133,10 +131,103 @@ def create_decoy_matrix(motif_matrix, motif_names):
             #make sure target vector does not get in decoy matrix
             while motifs == scramble:
                 scramble = set(random.sample(motif_names,length))
+        print('\n',motifs, len(motifs))
+        print(scramble,len(scramble))
         decoy[strain] = scramble
     return decoy
 
-def plot_scoring_matrix(target, max_len, decoy = False):
+def create_decoy_matrix2(motif_matrix, motif_names, strains_used):
+    '''Returns a scrambled version of motif_matrix
+
+    motif_matrix: {strain:set(present_motifs)}
+    motif_names: list of str, all used motif names
+
+    Scrambled matrix will contain same amount of motifs per strain, but
+    just randomly chosen from the motifs
+    '''
+    print('Scrambling matrix')
+    #scramble all the ones across strains
+    decoy = {}
+    all_presences = []
+    #first loop through the matrix to get all the presences
+    for strain in strains_used:
+        all_presences.extend(motif_matrix[strain])
+
+    random.shuffle(strains_used) #shuffle the strains
+
+    i=1
+    for strain in strains_used:
+        motifs = motif_matrix[strain]
+        counts = Counter(all_presences)
+        all_choices = list(counts.keys()) #so there are no duplicates
+        tot_count = sum(counts.values())
+        #make weights to ensure that motifs that occur more are chosen more
+        weights = [counts[elem]/tot_count for elem in all_choices]
+        # print(weights)
+        length = len(motifs)
+        print(strain,length,len(all_choices))
+        #choose sample of len(motifs) from all the 1-s in the matrix
+        try:
+            scramble = set(np.random.choice(all_choices, size=length,\
+                replace=False, p=weights))
+        except ValueError:
+            create_decoy_matrix2(motif_matrix, motif_names, strains_used)
+        if motifs == scramble:
+            #make sure target vector does not get in decoy matrix
+            while motifs == scramble:
+                print(strain,'while_loop', len(scramble))
+                scramble = set(np.random.choice(all_choices, size=length,\
+                    replace=False, p=weights))
+        for element in scramble:
+            #this will remove first occurence of element in all_presences
+            all_presences.remove(element)
+        print(i,strain,len(scramble),length, len(scramble&motifs))
+        decoy[strain] = scramble
+        i+=1
+    #set restraint that per strain a certain amount of motifs can disappear
+    #so 136 strains and 272/397 motifs 
+
+    # i=1
+    # for strain in strains_used:
+        # motifs = motif_matrix[strain]
+        # length = len(motifs)
+        # print(strain,length,len(set(all_presences)))
+        # #choose sample of len(motifs) from all the 1-s in the matrix
+        # try:
+            # scramble = set(np.random.choice(all_presences, size=length,\
+                # replace=False))
+        # except ValueError:
+            # create_decoy_matrix2(motif_matrix, motif_names, strains_used)
+        # while len(scramble) != length:
+            # print(strain,'while_loop1', len(scramble))
+            # add_len = length-len(scramble)
+            # add_scramble = set(np.random.choice(all_presences, size=add_len,\
+                # replace=False))
+            # scramble = scramble | add_scramble
+        # if motifs == scramble:
+            # #make sure target vector does not get in decoy matrix
+            # while motifs == scramble:
+                # print(strain,'while_loop2', len(scramble))
+                # scramble = set(np.random.choice(all_presences, size=length,\
+                    # replace=False))
+                # while len(scramble) != length:
+                    # add_len = length-len(scramble)
+                    # add_scramble = set(np.random.choice(all_presences, \
+                        # size=add_len, replace=False))
+                    # scramble = scramble | add_scramble
+        # for element in scramble:
+            # #this will remove first occurence of element in all_presences
+            # all_presences.remove(element)
+        # print(i,strain,len(scramble),length, len(scramble&motifs))
+        # decoy[strain] = scramble
+        # i+=1
+
+    #sample with duplicates but sample again the difference between length
+    #and length(scramble)
+    return decoy
+
+
+def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
     '''
     '''
     #get all values and convert to numpy array
@@ -159,8 +250,13 @@ def plot_scoring_matrix(target, max_len, decoy = False):
         print(len(s_decoy),len(scores))
         sns.distplot(s_decoy,kde_kws={'color':'#DC3220','label':'Decoy'},\
             hist_kws= {'color':'#DC3220','alpha':0.4})
-    plt.show()
-    # plt.savefig(
+    plt.title('Target and decoy distribution of correlation scores')
+    plt.xlabel('Correlation scores')
+    plt.ylabel('Density')
+    if plot_name:
+        plt.savefig(plot_name)
+    else:
+        plt.show()
 
 
 if __name__ == '__main__':
@@ -168,13 +264,18 @@ if __name__ == '__main__':
 
     molecular_motifs, m_motif_names = read_matrix(cmd.molecular_motifs)
     subcluster_motifs, s_motif_names = read_matrix(cmd.subcluster_motifs)
+    #only compare strains present in both matrices
+    used_strains = list(set(molecular_motifs) & set(subcluster_motifs))
     target_matrix = make_scoring_matrix(molecular_motifs, subcluster_motifs,\
-        m_motif_names, s_motif_names)
+        m_motif_names, s_motif_names, used_strains)
     # plot_scoring_matrix(target_matrix)
-    molecular_decoy = create_decoy_matrix(molecular_motifs, m_motif_names)
-    subcluster_decoy = create_decoy_matrix(subcluster_motifs, s_motif_names)
+    molecular_decoy = create_decoy_matrix2(molecular_motifs, m_motif_names,used_strains)
+    subcluster_decoy = create_decoy_matrix2(subcluster_motifs, s_motif_names,used_strains)
+    raise SystemExit('made it')
     decoy_matrix = make_scoring_matrix(molecular_decoy, subcluster_decoy,\
         m_motif_names, s_motif_names)
+
     max_length = len(m_motif_names) * len(s_motif_names)
+    plot_file = cmd.out_file.split('.')[0] + '.pdf'
     plot_scoring_matrix(target_matrix, max_length, decoy_matrix)
     
