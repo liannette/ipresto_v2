@@ -50,13 +50,21 @@ def get_commands():
     parser.add_argument('-o','--out_file',help='Output file',required=True)
     parser.add_argument('-f','--fdr_cutoff',help='FDR cutoff in percentage,\
         default = 1',type=float, default=1)
+    parser.add_argument('-v','--verbose',action='store_true',default=False,\
+        help='Print additional info')
+    parser.add_argument('--filter',default=False, action='store_true',\
+        help='Filter out motifs that occur in more than -r of the dataset')
+    parser.add_argument('-r','--remove',default=0.5, help='Percentage of\
+        dataset that will be taken for removing motifs, default = 0.5',\
+        type=float)
     return parser.parse_args()
 
-def read_matrix(infile):
+def read_matrix(infile, remove=0.5, filtering=False):
     '''
     Returns motif matrix {strain:set(present_motifs)} and set(motifs)
 
     infile: str, filepath
+    filtering: bool, filter out motifs occurring in more than half the strains
     '''
     print('\nReading motif file from {}'.format(infile))
     strain2motif = defaultdict(set)
@@ -70,22 +78,45 @@ def read_matrix(infile):
             for presence,col in zip(row,colnames):
                 if presence == '1':
                     strain2motif[col].add(motif)
-    filtered_strain2motif = filter_motif_dict(strain2motif)
+    filtered_strain2motif = filter_strains(strain2motif)
     print('  filtered out {} strains containing only one motif'.format(\
         len(strain2motif) - len(filtered_strain2motif)))
+    if filtering:
+        filtered_strain2motif,rownames = filter_motifs(filtered_strain2motif,\
+            remove)
     print("Motif matrix contains {} strains, {} motifs and {} 1's".format(\
         len(filtered_strain2motif), len(rownames), sum(\
         len(vals) for vals in filtered_strain2motif.values())))
     return filtered_strain2motif, rownames
 
-def filter_motif_dict(motif_dict):
+def filter_strains(motif_dict):
     '''Returns same dict but strains are removed if they contain < 2 motifs
 
-    motif_dict: {strain:[present_motifs]}
+    motif_dict: {strain:set(present_motifs)}
     '''
     filtered_motifs = {strain:motifs for strain,motifs in motif_dict.items()\
         if len(motifs) > 1}
     return filtered_motifs
+
+def filter_motifs(motif_dict,remove):
+    '''
+    Returns same dict, motifs are removed if they occurr in > 50% of strains
+
+    motif_dict: {strain:set(present_motifs)}
+    remove: remove motifs that occur in more than remove*len(strains)
+    keep_motifs: set of str, motifs to keep
+    '''
+    motif_counts = Counter([m for motifs in motif_dict.values() for m in\
+        motifs])
+    remove_len = len(motif_dict)*remove
+    keep_motifs = {m for m,count in motif_counts.items() if count<=remove_len}
+    print('  filtered out {} motifs that occur in > {} of strains'.format(\
+        len(motif_counts.keys())-len(keep_motifs),remove))
+    filtered_motifs = {strain : set(\
+        [m for m in motifs if motif_counts[m] <= remove_len])\
+        for strain,motifs in motif_dict.items()
+        }
+    return filtered_motifs, keep_motifs
 
 def make_scoring_matrix(m_motifs, s_motifs, m_m_names, s_m_names, strains_used):
     '''Returns list of tuples [(m_motif, s_motif, score)]
@@ -114,7 +145,7 @@ def make_scoring_matrix(m_motifs, s_motifs, m_m_names, s_m_names, strains_used):
             scoring_matrix[neither[0]][neither[1]] += 1
     return scoring_matrix
 
-def create_decoy_matrix(motif_matrix, motif_names, strains_used):
+def create_decoy_matrix(motif_matrix, motif_names, strains_used, verbose):
     '''Returns a scrambled version of motif_matrix
 
     motif_matrix: {strain:set(present_motifs)}
@@ -145,9 +176,9 @@ def create_decoy_matrix(motif_matrix, motif_names, strains_used):
         scramble = set(random.sample(strains_used,length))
         #make sure target vector does not get in decoy matrix
         while target_strains == scramble:
-            print(motif, 'while_loop')
             scramble = set(random.sample(strains_used,length))
-        print(motif, length, len(scramble),len(target_strains & scramble))
+        if verbose:
+            print(motif, length, len(scramble),len(target_strains & scramble))
         for decoy_strain in scramble:
             decoy[decoy_strain].add(motif)
     return decoy
@@ -246,7 +277,7 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
             print(len(s_decoy),len(scores))
             difference = max_len - len(s_decoy)
             s_decoy = np.append(s_decoy, [0]*difference)
-        print(len(s_decoy),len(scores))
+        assert len(s_decoy)==len(scores)
         sns.distplot(s_decoy,kde_kws={'color':'#DC3220','label':'Decoy'},\
             hist_kws= {'color':'#DC3220','alpha':0.4})
     plt.title('Target and decoy distribution of correlation scores')
@@ -257,21 +288,26 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
     else:
         plt.show()
 
+def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
+    filtering, remove, verbose):
+    '''Combines all functions to make plot of target-decoy distr and outfile
 
-if __name__ == '__main__':
-    cmd = get_commands()
-
-    molecular_motifs, m_motif_names = read_matrix(cmd.molecular_motifs)
-    subcluster_motifs, s_motif_names = read_matrix(cmd.subcluster_motifs)
+    molecular_infile, molecular_infile, outfile: str, filepaths to matrix
+        files and to output file
+    '''
+    molecular_motifs, m_motif_names = read_matrix(molecular_infile,remove,\
+        filtering)
+    subcluster_motifs, s_motif_names = read_matrix(sub_cluster_infile,\
+        remove, filtering)
     #only compare strains present in both matrices
     used_strains = set(molecular_motifs) & set(subcluster_motifs)
     target_matrix = make_scoring_matrix(molecular_motifs, subcluster_motifs,\
         m_motif_names, s_motif_names, used_strains)
-    # plot_scoring_matrix(target_matrix)
+
     molecular_decoy = create_decoy_matrix(molecular_motifs,\
-        list(m_motif_names),used_strains)
+        list(m_motif_names),used_strains,verbose)
     subcluster_decoy = create_decoy_matrix(subcluster_motifs,\
-        list(s_motif_names),used_strains)
+        list(s_motif_names),used_strains,verbose)
     decoy_matrix = make_scoring_matrix(molecular_decoy, subcluster_decoy,\
         m_motif_names, s_motif_names, used_strains)
 
@@ -282,15 +318,25 @@ if __name__ == '__main__':
     decoy_tuples = sorted([(mm,sm,score) for mm, val_dict in \
         decoy_matrix.items() for sm,score in val_dict.items()],\
         key=lambda x: -x[2])
-    print(target_tuples[:10])
-    print(decoy_tuples[:10])
+    if verbose:
+        print(target_tuples[:10])
+        print(decoy_tuples[:10])
 
-    with open(cmd.out_file,'w') as outf:
+    with open(outfile,'w') as outf:
         for tup in target_tuples:
             outf.write('{}\n'.format('\t'.join(map(str,tup))))
+    decoy_out = outfile.split('.')[0] + '_decoy_scores.txt'
+    with open(decoy_out,'w') as outf:
+        for tup in decoy_tuples:
+            outf.write('{}\n'.format('\t'.join(map(str,tup))))
 
-    # print(decoy_matrix)
     max_length = len(m_motif_names) * len(s_motif_names)
-    plot_file = cmd.out_file.split('.')[0] + '.pdf'
+    plot_file = outfile.split('.')[0] + '.pdf'
     plot_scoring_matrix(target_tuples, max_length, decoy_tuples, plot_file)
-    
+
+
+if __name__ == '__main__':
+    cmd = get_commands()
+
+    correlation_analysis(cmd.molecular_motifs,cmd.subcluster_motifs,\
+        cmd.out_file, cmd.filter, cmd.remove, cmd.verbose)
