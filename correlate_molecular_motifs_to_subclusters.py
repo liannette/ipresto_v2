@@ -78,12 +78,12 @@ def read_matrix(infile, remove=0.5, filtering=False):
             for presence,col in zip(row,colnames):
                 if presence == '1':
                     strain2motif[col].add(motif)
+    if filtering:
+        strain2motif,rownames = filter_motifs(strain2motif,\
+            remove)
     filtered_strain2motif = filter_strains(strain2motif)
     print('  filtered out {} strains containing only one motif'.format(\
         len(strain2motif) - len(filtered_strain2motif)))
-    if filtering:
-        filtered_strain2motif,rownames = filter_motifs(filtered_strain2motif,\
-            remove)
     print("Motif matrix contains {} strains, {} motifs and {} 1's".format(\
         len(filtered_strain2motif), len(rownames), sum(\
         len(vals) for vals in filtered_strain2motif.values())))
@@ -149,8 +149,8 @@ def create_decoy_matrix(motif_matrix, motif_names, strains_used, verbose):
     '''Returns a scrambled version of motif_matrix
 
     motif_matrix: {strain:set(present_motifs)}
-    motif_names: list of str, all used motif names
-    strains_used: set of str, all available strains to choose from
+    motif_names: set of str, all used motif names
+    strains_used: list of str, all available strains to choose from
 
     Scrambled matrix will contain same amount of strains per motif, but
     just randomly chosen from the strains, so scrambling the presence absence
@@ -161,18 +161,21 @@ def create_decoy_matrix(motif_matrix, motif_names, strains_used, verbose):
     decoy = defaultdict(set)
     #first loop through the matrix to get all strains per motif
     motif_dict = defaultdict(set) #set so they can be compared later
+    motif_list = []
     strain_lens = {}
     for strain in strains_used:
         motifs = motif_matrix[strain]
         strain_lens[strain] = len(motifs)
-        for motif in motifs:
+        for motif in sorted(motifs): #sort to make deterministic
             motif_dict[motif].add(strain)
-    motif_list = list(motif_dict.keys())
+            if not motif in motif_list:
+                motif_list.append(motif)
     random.shuffle(motif_list)
     for motif in motif_list:
         target_strains = motif_dict[motif]
         length = len(target_strains)
         #choose the same amount of random strains
+        random.shuffle(strains_used)
         scramble = set(random.sample(strains_used,length))
         #make sure target vector does not get in decoy matrix
         while target_strains == scramble:
@@ -183,82 +186,9 @@ def create_decoy_matrix(motif_matrix, motif_names, strains_used, verbose):
             decoy[decoy_strain].add(motif)
     return decoy
 
-def create_decoy_matrix2(motif_matrix, motif_names, strains_used):
-    '''Returns a scrambled version of motif_matrix
 
-    motif_matrix: {strain:set(present_motifs)}
-    motif_names: list of str, all used motif names
-    strains_used: list of str, strains that are used
-
-    Sort motifs from high to low presence and then for each motif it fills
-    the matrix again by sampling the strains that do not have their original
-    length yet. In this way it is semi random: choosing randomly the strains
-    while keeping same amount of motifs per strain and the same
-    present motifs, but the motifs have to be sorted for it to converge.
-
-    Two problems: it only works when having weights for the bigger strains,
-    and scrambling rows/colomns with almost all 1-s has little effect on
-    end distribution (they are really similar)
-    '''
-    print('\nScrambling motif matrix')
-    #scramble all the ones across strains and collect in decoy
-    decoy = defaultdict(set)
-    #first loop through the matrix to get all strains per motif
-    motif_dict = defaultdict(list)
-    strain_lens = {}
-    for strain in strains_used:
-        motifs = motif_matrix[strain]
-        strain_lens[strain] = len(motifs)
-        for motif in motifs:
-            motif_dict[motif].append(strain)
-
-    used_motifs = list(motif_dict)
-    random.shuffle(used_motifs) #shuffle the motifs
-
-    new_strain_lens = defaultdict(int)
-    for i,(motif,strns) in enumerate(sorted(motif_dict.items(),\
-        key=lambda x: -len(x[1]))):
-    # for i, motif in enumerate(used_motifs): #this never works
-        length = len(motif_dict[motif])
-        possible_strains = []
-        weights = []
-        for strain,max_len in strain_lens.items():
-            current_len = new_strain_lens[strain]
-            weight = max_len - current_len
-            if weight > 0:
-                possible_strains.append(strain)
-                weights.append(weight)
-        sum_w = sum(weights)
-        new_weights = [wght/sum_w for wght in weights]
-        # print(i,motif,length,len(possible_strains))
-        try:
-            # scrambled_strains = random.sample(possible_strains, k=length)
-            scrambled_strains = list(np.random.choice(possible_strains,\
-                size=length, replace=False, p=new_weights)) #, p=new_weights
-        except ValueError:
-            create_decoy_matrix2(motif_matrix, motif_names, strains_used)
-        # print(len(scrambled_strains))
-        j=0
-        while scrambled_strains == motif_dict[motif]:
-            print(motif,'while_loop')
-            if j>=10:
-                #probably this version is only option
-                create_decoy_matrix2(motif_matrix, motif_names, strains_used)
-            try:
-                # scrambled_strains = random.sample(possible_strains, k=length)
-                scrambled_strains = list(np.random.choice(possible_strains,\
-                    size=length, replace=False, p=new_weights)) #, p=new_weights
-            except ValueError:
-                create_decoy_matrix2(motif_matrix, motif_names, strains_used)
-            j+=1
-        for scr_strain in scrambled_strains:
-            # print(scr_strain,motif)
-            new_strain_lens[scr_strain] += 1
-            decoy[scr_strain].add(motif)
-    return decoy
-
-
-def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
+def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False,
+    cutoff_score = False, fdr= False, above_fdr=False):
     '''
     '''
     #get all values and convert to numpy array
@@ -269,7 +199,7 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
         difference = max_len - len(scores)
         scores = np.append(scores, [0]*difference)
     sns.set_style('darkgrid')
-    sns.distplot(scores,kde_kws={'color':'#004B96','label':'Target'},\
+    ax = sns.distplot(scores,kde_kws={'color':'#004B96','label':'Target'},\
         hist_kws= {'color':'#004B96','alpha':0.4})
     if decoy:
         s_decoy = np.array(list(zip(*decoy))[2])
@@ -278,8 +208,13 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
             difference = max_len - len(s_decoy)
             s_decoy = np.append(s_decoy, [0]*difference)
         assert len(s_decoy)==len(scores)
-        sns.distplot(s_decoy,kde_kws={'color':'#DC3220','label':'Decoy'},\
-            hist_kws= {'color':'#DC3220','alpha':0.4})
+        sns.distplot(s_decoy,kde_kws={'color':'#DC3220','label':'Decoy',\
+            'bw':.08}, hist_kws= {'color':'#DC3220','alpha':0.4})
+    if cutoff_score:
+        ax.axvline(cutoff_score, color = 'black', ls = '-.', lw=0.5)
+        bot, top = ax.get_ylim()
+        ax.text(x = cutoff_score+5,y=top/2, s='{} above\n{}% FDR'.format(\
+            above_fdr,fdr), multialignment='left',size=8)
     plt.title('Target and decoy distribution of correlation scores')
     plt.xlabel('Correlation scores')
     plt.ylabel('Density')
@@ -289,7 +224,7 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False):
         plt.show()
 
 def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
-    filtering, remove, verbose):
+    filtering, remove, fdr, verbose):
     '''Combines all functions to make plot of target-decoy distr and outfile
 
     molecular_infile, molecular_infile, outfile: str, filepaths to matrix
@@ -299,8 +234,8 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
         filtering)
     subcluster_motifs, s_motif_names = read_matrix(sub_cluster_infile,\
         remove, filtering)
-    #only compare strains present in both matrices
-    used_strains = set(molecular_motifs) & set(subcluster_motifs)
+    #only compare strains present in both matrices, sort to make deterministic
+    used_strains = sorted(set(molecular_motifs) & set(subcluster_motifs))
     target_matrix = make_scoring_matrix(molecular_motifs, subcluster_motifs,\
         m_motif_names, s_motif_names, used_strains)
 
@@ -322,21 +257,66 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
         print(target_tuples[:10])
         print(decoy_tuples[:10])
 
+    cutoff_score, len_above_cutoff = calc_fdr_score(target_tuples,\
+        decoy_tuples, fdr)
+
     with open(outfile,'w') as outf:
+        outf.write('#{}% FDR cutoff: {}. {} values above cutoff\n'.format(\
+            fdr, cutoff_score, len_above_cutoff))
+        outf.write('#{} molecular-and {} subcluster motifs used'.format(\
+            len(m_motif_names),len(s_motif_names)) +\
+            ' across {} strains'.format(len(used_strains)))
         for tup in target_tuples:
             outf.write('{}\n'.format('\t'.join(map(str,tup))))
-    decoy_out = outfile.split('.')[0] + '_decoy_scores.txt'
+    decoy_out = outfile.split('.txt')[0] + '_decoy_scores.txt'
     with open(decoy_out,'w') as outf:
         for tup in decoy_tuples:
             outf.write('{}\n'.format('\t'.join(map(str,tup))))
 
     max_length = len(m_motif_names) * len(s_motif_names)
-    plot_file = outfile.split('.')[0] + '.pdf'
-    plot_scoring_matrix(target_tuples, max_length, decoy_tuples, plot_file)
+    plot_file = outfile.split('.txt')[0] + '.pdf'
+    plot_scoring_matrix(target_tuples, max_length, decoy_tuples, plot_file,
+        cutoff_score, fdr, len_above_cutoff)
 
+def calc_fdr_score(targets, decoys, fdr = 1):
+    '''Calculates the correlation score cutoff where there is FDR of fdr%
+
+    targets, decoys: list of tuples [(m_motif,s_motif,score)] of target and
+        decoy distribution respectively
+    '''
+    #print also the amount of targets above cutoff
+    scores = list(zip(*targets))[2]
+    s_decoy = list(zip(*decoys))[2]
+    if max(scores) <= max(s_decoy):
+        print('\nFDR is 100% at maximum value of target distribution')
+        return max(s_decoy),0
+    fdr_score = {} # keeps track of fdr for each score {fdr:which_score}
+    decoy_select = [value for value in s_decoy if value >= 0]
+    scores_select = [value for value in scores if value >= 0]
+    for scr in range(max(scores)+1):
+        decoy_select = [value for value in decoy_select if value >= scr]
+        scores_select = [value for value in scores_select if value >= scr]
+        false_pos_estimate = len(decoy_select)
+        len_values = len(scores_select)
+        fdr_estimate = false_pos_estimate / len_values * 100
+        if not fdr_estimate in fdr_score:
+            #keep lowest score associated to a FDR
+            fdr_score[fdr_estimate] = (scr,len_values)
+    # print(sorted(fdr_score.items(),key=lambda x: x[1][0]))
+    #find cutoff
+    prev = 0
+    for fdr_sc in sorted(fdr_score):
+        print(fdr_sc, fdr_score[fdr_sc])
+        if fdr_sc > fdr:
+            chosen_cutoff = prev
+            break
+        prev = fdr_sc
+    print(chosen_cutoff, fdr_score[chosen_cutoff])
+    return fdr_score[chosen_cutoff]
 
 if __name__ == '__main__':
+    random.seed(595) #get same output every time
     cmd = get_commands()
 
     correlation_analysis(cmd.molecular_motifs,cmd.subcluster_motifs,\
-        cmd.out_file, cmd.filter, cmd.remove, cmd.verbose)
+        cmd.out_file, cmd.filter, cmd.remove, cmd.fdr_cutoff, cmd.verbose)
