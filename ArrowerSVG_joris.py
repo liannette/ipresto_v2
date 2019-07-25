@@ -26,6 +26,7 @@ from colorsys import rgb_to_hsv
 from math import sin, atan2, pi
 from collections import defaultdict
 from itertools import groupby
+import re
 
 global internal_domain_margin
 global gene_contour_thickness
@@ -72,6 +73,10 @@ def get_commands():
     parser.add_argument('--include_stat_clan',help='If specified, only\
         this one or more families will be included in the visualisation',\
         default=False, nargs="+")
+    parser.add_argument("--include_list", dest="include_list", default=False, \
+        help="If provided only the domains in this file will be taken into \
+        account in the plotting of subclusters. One line should contain one \
+        Pfam ID (default: False - meaning all Pfams present in domhits file)")
     return parser.parse_args()
 
 # read various color data
@@ -402,8 +407,8 @@ def new_color(gene_or_domain):
 def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     color_genes, color_domains, pfam_domain_categories, pfam_info, loci,\
     max_width, domains_color_file, new_color_domains, module_list=None, \
-    module_method = 'lda', H=30, h=5, l=12, mX=10, mY=10, scaling=30, \
-    absolute_start=0, absolute_end=-1):
+    module_method = 'lda', include_list = False, H=30, h=5, l=12, mX=10, \
+    mY=10, scaling=30, absolute_start=0, absolute_end=-1):
     '''
     Create the main SVG document:
         - read pfd file with domain information (pfdFile contains complete path)
@@ -642,10 +647,24 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                 domain_list = identifiers[identifier]
                 should_draw_arrow = True
                 if module_list:
-                    domains_in_gene = ';'.join([info[3] for info in \
-                        domain_list])
-                    #stat index is 5, lda index is 2
-                    mod_i = 2 if module_method == 'lda' else 5
+                    gene_list = [info[3] for info in domain_list]
+                    if include_list:
+                        #only include domains from analysis
+                        ngene_list = []
+                        for dom in gene_list:
+                            #check if domain is a subPfam
+                            m = re.search(r'_c\d+$',dom)
+                            if m:
+                                if dom[:m.start()] in include_list:
+                                    ngene_list.append(dom)
+                            else:
+                                if dom in include_list:
+                                    ngene_list.append(dom)
+                        domains_in_gene = ';'.join(ngene_list)
+                    else:
+                        domains_in_gene = ';'.join(gene_list)
+                    #stat index is 5, lda index is 3
+                    mod_i = 3 if module_method == 'lda' else 5
                     if not domains_in_gene in module_list[mod_i]:
                         should_draw_arrow = False
                 if should_draw_arrow:
@@ -790,6 +809,14 @@ def read_modules(filename, lda_or_stat='lda'):
                         mod_dict[header].append(mod_list)
     return mod_dict
 
+def read_txt(in_file):
+    '''Reads text file into list
+
+    in_file: str, file path
+    '''
+    with open(in_file, 'r') as inf:
+        lines = [line.strip() for line in inf]
+    return lines
 
 if __name__ == '__main__':
     # filenames = sys.argv[1] #file with list of BGC gbk files to plot
@@ -823,6 +850,9 @@ if __name__ == '__main__':
     else:
         with open(cmd.filenames,'r') as inf:
             files = [line.strip() for line in inf]
+    if cmd.include_list:
+            include_doms = read_txt(cmd.include_list)
+
     files.reverse()
     domain_colours = read_color_domains_file(cmd.domains_colour_file)
     pfam_info = {}
@@ -842,9 +872,11 @@ if __name__ == '__main__':
                     if not module[0] in cmd.topic_include:
                         plot=False
                 if plot:
-                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
-                        pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,
-                        module_list=module, module_method = 'lda')
+                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},\
+                        domain_colours,{}, pfam_info,-1,None,\
+                        cmd.domains_colour_file,new_colour_doms,\
+                        module_list=module, module_method = 'lda',\
+                        include_list=include_doms)
         if modules_stat:
             mods = modules_stat[bgc]
             if len(mods[0]) == 7:
@@ -866,7 +898,9 @@ if __name__ == '__main__':
                     if not module[7] in cmd.include_stat_clan:
                         plot=False
                 if plot:
-                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
-                        pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,
-                        module_list=module, module_method = 'stat')
+                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},\
+                        domain_colours,{}, pfam_info,-1,None,\
+                        cmd.domains_colour_file,new_colour_doms,\
+                        module_list=module, module_method = 'stat',\
+                        include_list=include_doms)
         
