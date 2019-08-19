@@ -29,6 +29,7 @@ from operator import itemgetter
 import os
 import random
 import re
+import scipy.stats as scs
 import seaborn as sns
 import subprocess
 import time
@@ -57,6 +58,10 @@ def get_commands():
     parser.add_argument('-r','--remove',default=0.5, help='Percentage of\
         dataset that will be taken for removing motifs, default = 0.5',\
         type=float)
+    parser.add_argument('-c','--cores', help='Number of cores to use',
+        default=5,type=int)
+    parser.add_argument('-n','--n_resamples',help='The number of permutations\
+        taken, default=500',default=500,type=int)
     return parser.parse_args()
 
 def read_matrix(infile, remove=0.5, filtering=False):
@@ -266,7 +271,7 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False,
         plt.show()
 
 def get_random_scores(m_motifs, m_used, s_motifs, s_used, strains_used,\
-    verbose, loops = 10):
+    verbose, cores, loops = 500):
     '''Returns {m_motif: {s_motif:[list_of_random_scores]} }
 
     m_motifs, s_motifs: {strain:set(present_motifs)}
@@ -275,28 +280,66 @@ def get_random_scores(m_motifs, m_used, s_motifs, s_used, strains_used,\
     verbose: bool, print extra information
     loops: int, number of loops
     '''
-    print('Scrambling matrix',loops,'times to get random list')
-    rrange = 1000000
-    newseed = random.randrange(rrange)
+    print('\nResampling matrix',loops,'times to get random distribution')
     all_matrix = {m_m:defaultdict(list) for m_m in m_used}
-    for l in range(loops):
-        print(newseed)
-        random.seed(newseed) #make random yet deterministic
-        newseed = random.randrange(rrange)
-        mol_decoy = create_decoy_matrix(m_motifs,\
-            list(m_used),strains_used,verbose)
-        sub_decoy = create_decoy_matrix(s_motifs,\
-            list(s_used),strains_used,verbose)
-        decoy_matrix = make_scoring_matrix(mol_decoy, sub_decoy,\
-            m_used, s_used, strains_used)
+    pool = Pool(cores,maxtasksperchild=10)
+    done_list = []
+    for new_seed in random.sample(range(100000),k=loops):
+        pool.apply_async(get_random_score,args=(m_motifs, m_used, s_motifs,\
+            s_used, strains_used, verbose,new_seed),\
+            callback=lambda x: done_list.append(x))
+    pool.close()
+    pool.join()
+    for decoy_matrix in done_list:
         for m_m,s_ms in decoy_matrix.items():
             for s_m,score in s_ms.items():
                 all_matrix[m_m][s_m].append(score)
-    print(all_matrix['motif_10'])
+    return all_matrix
+
+def get_random_score(m_motifs, m_used, s_motifs, s_used, strains_used,\
+    verbose,newseed):
+    '''Returns {m_motif: {s_motif:random_score} }
+
+    m_motifs, s_motifs: {strain:set(present_motifs)}
+    m_used, s_used: set of motifs used
+    strains_used: set of strains used
+    verbose: bool, print extra information
+    newseed: a seed number to randomise the decoy
+    '''
+    random.seed(newseed) #make random (there is a seed for making one
+    #decoy so choose a new seed each time here
+    mol_decoy = create_decoy_matrix(m_motifs,\
+        list(m_used),strains_used,verbose)
+    sub_decoy = create_decoy_matrix(s_motifs,\
+        list(s_used),strains_used,verbose)
+    decoy_matrix = make_scoring_matrix(mol_decoy, sub_decoy,\
+        m_used, s_used, strains_used)
+    return decoy_matrix
+
+def compare_target_to_random(target, list_decoy_matrix, m_used,s_used,\
+    n_resamples=500):
+    '''Returns {m_motif: {s_motif:pvalue} }
+
+    target: {m_motif: {s_motif:score} }
+    list_decoy_matrix: {m_motif: {s_motif:[list_of_random_scores]} }
+    m_used, s_used: set of motifs used
+    p-value comes from one sided resampling test (amount of values from
+        resampled distribution larger or equal to target value divided by
+        amount of resamplings), so basically checking if target value is on
+        edge of distribution
+    '''
+    all_matrix = defaultdict(dict)
+    for m_m,s_ms in target.items():
+        for s_m,score in s_ms.items():
+            distr = list_decoy_matrix[m_m][s_m]
+            above_or_equal = len([0 for i in distr if i >= score])
+            pval = above_or_equal / n_resamples if above_or_equal > 0 else \
+                1/n_resamples
+            all_matrix[m_m][s_m] = pval
     return all_matrix
 
 def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
-    filtering, remove, fdr, verbose):
+    filtering, remove, fdr, verbose, cores, resamples_n):
     '''Combines all functions to make plot of target-decoy distr and outfile
 
     molecular_infile, molecular_infile, outfile: str, filepaths to matrix
@@ -327,9 +370,13 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
     decoy_matrix = make_scoring_matrix(molecular_decoy, subcluster_decoy,\
         m_motif_names, s_motif_names, used_strains)
 
-    #get 100 decoys to compare target value to
+    #Permutation test by simulating each target distribution by constructing
+    #many decoys to compare target value to
     multiple_decoy_matrix = get_random_scores(molecular_motifs,\
-        m_motif_names, subcluster_motifs, s_motif_names, used_strains,verbose)
+        m_motif_names, subcluster_motifs, s_motif_names, used_strains,verbose,\
+        cores,loops=resamples_n)
+    target_pvals = compare_target_to_random(target_matrix,\
+        multiple_decoy_matrix,m_motif_names,s_motif_names,resamples_n)
 
     #get all values and convert tuples
     target_tuples = sorted([(mm,sm,score) for mm, val_dict in \
@@ -351,16 +398,19 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
         outf.write('#{} molecular-and {} subcluster motifs used'.format(\
             len(m_motif_names),len(s_motif_names)) +\
             ' across {} strains\n'.format(len(used_strains)))
-        outf.write(\
-            '#Molecular_motif Subcluster_motif Score Max_score Ratio\n')
+        header = ['Molecular_motif', 'Subcluster_motif', 'Score',\
+            'Max_score', 'Ratio_max_score','P-value_permutation_test']
+        outf.write('{}\n'.format('\t'.join(header)))
         ratios = []
         for tup in target_tuples:
-            max_s = max_scores[tup[0]][tup[1]]
-            ratio = tup[2]/max_s if max_s > 0 else 0
+            m_m,s_m,sc = tup
+            max_s = max_scores[m_m][s_m]
+            ratio = sc/max_s if max_s > 0 else 0
             ratio = ratio if ratio > 0 else 0
             ratios.append(ratio)
-            outf.write('{}\t{}\t{}\n'.format('\t'.join(map(str,tup)),max_s,\
-                ratio))
+            pval = target_pvals[m_m][s_m]
+            outf.write('{}\t{}\t{:.2f}\t{:.3f}\n'.format(\
+                '\t'.join(map(str,tup)), max_s, ratio, pval))
     decoy_out = outfile.split('.txt')[0] + '_decoy_scores.txt'
     with open(decoy_out,'w') as outf:
         for tup in decoy_tuples:
@@ -375,6 +425,8 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
     plot_file = outfile.split('.txt')[0] + '.pdf'
     plot_scoring_matrix(target_tuples, max_length, decoy_tuples, plot_file,
         cutoff_score, fdr, len_above_cutoff)
+    n_plot_file = outfile.split('.txt')[0] + '_only_target.pdf'
+    plot_scoring_matrix(target_tuples, max_length, plot_name=n_plot_file)
 
 def calc_fdr_score(targets, decoys, fdr = 1):
     '''Calculates the correlation score cutoff where there is FDR of fdr%
@@ -413,8 +465,15 @@ def calc_fdr_score(targets, decoys, fdr = 1):
     return fdr_score[chosen_cutoff]
 
 if __name__ == '__main__':
+    start = time.time()
     random.seed(595) #get same output every time
     cmd = get_commands()
 
     correlation_analysis(cmd.molecular_motifs,cmd.subcluster_motifs,\
-        cmd.out_file, cmd.filter, cmd.remove, cmd.fdr_cutoff, cmd.verbose)
+        cmd.out_file, cmd.filter, cmd.remove, cmd.fdr_cutoff, cmd.verbose,\
+        cmd.cores, cmd.n_resamples)
+
+    end = time.time()
+    t = end-start
+    t_str = '{}h{}m{}s'.format(int(t/3600),int(t%3600/60),int(t%3600%60))
+    print('\nScript completed in {}'.format(t_str))
