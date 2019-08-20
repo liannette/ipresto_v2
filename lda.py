@@ -257,7 +257,7 @@ def process_lda(lda, dict_lda, corpus_bow, modules, feat_num, bgc_dict,
     top_match_file_filt = top_match_file.split('.txt')[0]+'_filtered.txt'
     write_topic_matches(t_matches, bgc_classes, top_match_file_filt,plot=True)
     bgc_with_topics = retrieve_match_per_bgc(t_matches, bgc_classes, \
-        known_subcl,outfolder,plot=plot)
+        known_subcl,outfolder,plot=True)
 
     #make filtered scatterplot
     lengths = []
@@ -536,8 +536,8 @@ def retrieve_match_per_bgc(topic_matches,bgc_classes,known_subcl,outfolder,\
         with open(subcl_out,'w') as outf:
             #sort the subclusters alphabetically on first info element
             outf.write('##Values below each subcluster: %overlap len_overlap'+
-                ' bgc class topic topic_probability overlap_genes'+
-                ' non_overlap_genes\n')
+                ' bgc class topic topic_probability overlap_score'+
+                ' overlap_genes non_overlap_genes\n')
             for bgc, info in sorted(known_subcl.items(),\
                 key=lambda x: x[1][0][0]):
                 for k_subclust in info:
