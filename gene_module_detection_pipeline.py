@@ -1424,7 +1424,7 @@ if __name__ == "__main__":
     mod_file_f = '{}_filtered_modules.txt'.format(\
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file_f,modules,bgcs_with_mods)
-    bgcmodfile = '{}_bgcs_with_domains.txt'.format(\
+    bgcmodfile = '{}_bgcs_with_mods.txt'.format(\
         mod_file.split('_modules.txt')[0])
     rank_mods = {pair[0]:i+1 for i,pair in enumerate(sorted(modules.items(),\
         key=itemgetter(1)))}
