@@ -22,6 +22,7 @@ from numpy import sqrt
 import numpy as np
 from operator import itemgetter
 import pandas as pd
+import re
 import scipy.cluster.hierarchy as sch
 import seaborn as sns
 from statistics import mean,median
@@ -921,6 +922,31 @@ def read2dict(filepath, sep=',',header=False):
             output[line[0]] = line[1:]
     return output
 
+def plot_convergence(logfile,iterations):
+    '''
+    Plot convergence of log_likelihood of the model as calculated in logging
+
+    logfile: str, filepath
+    iterations: int
+    '''
+    outfile = logfile.split('.txt')[0]+'_convergence_likelihood.pdf'
+    p = re.compile("(-*\d+\.\d+) per-word .* (\d+\.\d+) perplexity")
+    matches = [p.findall(l) for l in open(logfile)]
+    matches = [m for m in matches if len(m) > 0]
+    tuples = [t[0] for t in matches]
+    perplexity = [float(t[1]) for t in tuples]
+    liklihood = [float(t[0]) for t in tuples]
+    eval_evry = iterations/len(tuples)
+    iters = [eval_evry*i for i in range(len(tuples))]
+    plt.plot(iters,liklihood,c="black")
+    plt.ylabel("log likelihood")
+    plt.xlabel("iteration")
+    plt.title("Topic Model Convergence")
+    plt.grid()
+    plt.savefig(outfile)
+    # plt.show
+    plt.close()
+
 if __name__ == '__main__':
     start = time.time()
     #files provided should be filtered bgc csv file and filtered module file
@@ -990,6 +1016,8 @@ if __name__ == '__main__':
         cmd.min_feat_score, bgclist, cmd.out_folder, bgc_classes_dict, \
         num_topics=cmd.topics, amplif=cmd.amplify, plot=cmd.plot, \
         known_subcl=known_subclusters)
+
+    plot_convergence(log_out,cmd.iterations)
 
     end = time.time()
     t = end-start
