@@ -453,7 +453,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
         if module_list:
             if module_method == 'lda':
                 mod_info = 'Topic {}, probability {}'.format(module_list[0],\
-                    module_list[1])
+                    module_list[1]) +\
+                    ', overlap score {}'.format(module_list[2])
             elif module_method == 'stat':
                 if len(mods[0]) == 7:
                     mod_info = (\
@@ -852,6 +853,8 @@ if __name__ == '__main__':
             files = [line.strip() for line in inf]
     if cmd.include_list:
             include_doms = read_txt(cmd.include_list)
+    else:
+        include_doms = False
 
     files.reverse()
     domain_colours = read_color_domains_file(cmd.domains_colour_file)
