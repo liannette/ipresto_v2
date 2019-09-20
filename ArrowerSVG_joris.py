@@ -871,7 +871,6 @@ if __name__ == '__main__':
             for module in modules_lda[bgc]:
                 plot=True
                 if cmd.topic_include:
-                    print(module[0])
                     if not module[0] in cmd.topic_include:
                         plot=False
                 if plot:
@@ -882,6 +881,8 @@ if __name__ == '__main__':
                         include_list=include_doms)
         if modules_stat:
             mods = modules_stat[bgc]
+            if not mods:
+                print('No statistical modules present')
             if len(mods[0]) == 7:
                 #sort on family
                 mods.sort(key=lambda x: int(x[-1]))
@@ -891,7 +892,6 @@ if __name__ == '__main__':
             for module in mods:
                 plot=True
                 if cmd.include_stat_module:
-                    # print(module[0])
                     if not module[0] in cmd.include_stat_module:
                         plot=False
                 if cmd.include_stat_family:
