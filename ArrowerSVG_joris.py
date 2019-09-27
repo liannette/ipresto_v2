@@ -53,6 +53,9 @@ def get_commands():
         domains are linked to genes: bgc\tg_id\tp_id\tlocation\torf_num\t\
         tot_orf\tdomain\tq_range\tbitscore, location as start;end;strand \
         qrange as start;end')
+    parser.add_argument('-g','--genes_colour_file',help='A tsv file that\
+        contains BGCname_GeneNumber\tr,g,b on each line. Is optional, but when\
+        used domains will not be coloured',default=False)
     parser.add_argument('-o','--outfile',help='Outfile filepath')
     parser.add_argument('-l','--modules_lda',help='A file with matches to\
         topics originating from the LDA algorithm, optional.',default=False)
@@ -80,7 +83,7 @@ def get_commands():
     return parser.parse_args()
 
 # read various color data
-def read_color_genes_file():
+def read_color_genes_file(gene_color_file):
     # Try to read already-generated colors for genes
     color_genes = {}
     
@@ -96,7 +99,7 @@ def read_color_genes_file():
                     color_genes[name] = [int(rgb[x]) for x in range(3)]
     else:
         print("  Gene color file was not found. A new file will be created")
-        with open(gene_color_file, "w") as color_genes_handle:
+        with open('gene_color_file.txt', "w") as color_genes_handle:
             color_genes_handle.write("NoName\t255,255,255\n")
         color_genes = {"NoName":[255, 255, 255]}
     
@@ -145,7 +148,8 @@ def read_pfam_domain_categories():
    
 
 # --- Draw arrow for gene
-def draw_arrow(additional_tabs, X, Y, L, l, H, h, strand, color, color_contour, category, gid, domain_list):
+def draw_arrow(additional_tabs, X, Y, L, l, H, h, strand, color,\
+    color_contour, category, gid, domain_list, only_color_genes):
     """
     SVG code for arrow:
         - (X,Y) ... upper left (+) or right (-) corner of the arrow
@@ -156,7 +160,9 @@ def draw_arrow(additional_tabs, X, Y, L, l, H, h, strand, color, color_contour, 
         - l ... arrow head length
         - color
         - strand
-    the edges are ABCDEFG starting from (X,Y)     
+    the edges are ABCDEFG starting from (X,Y)
+    domain_list: list of elements to draw domains
+    only_color_genes: bool, only color genes
     """
 
     if strand == '+':
@@ -225,6 +231,8 @@ def draw_arrow(additional_tabs, X, Y, L, l, H, h, strand, color, color_contour, 
     
     # paint domains. Domains on the tip of the arrow should not have corners sticking
     #  out of them
+    if only_color_genes:
+        domain_list = []
     for domain in domain_list:
         #[X, L, H, domain_accession, (domain_name, domain_description), color, color_contour]
         dX = domain[0]
@@ -408,7 +416,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     color_genes, color_domains, pfam_domain_categories, pfam_info, loci,\
     max_width, domains_color_file, new_color_domains, module_list=None, \
     module_method = 'lda', include_list = False, H=30, h=5, l=12, mX=10, \
-    mY=10, scaling=30, absolute_start=0, absolute_end=-1):
+    mY=10, scaling=30, absolute_start=0, absolute_end=-1,\
+    only_color_genes=False):
     '''
     Create the main SVG document:
         - read pfd file with domain information (pfdFile contains complete path)
@@ -416,8 +425,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
         - record genes, start and stop positions, and strands, and associate domains
         - write the SVG files
     module_method: str, should be either 'lda' or 'stat'
+    only_color_genes: bool, only color genes specified in gene_color file
     '''
-    
     # for colors not found in colors_genes and color_domains, we need to generate them from scratch
     new_color_genes = {}
     
@@ -570,7 +579,9 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                     cds_tag += "\n" + feature.qualifiers["product"][0]
                     
                 # Get color
-                color = (255,255,255)
+                # color = (255,255,255)
+                # if color_genes:
+                    # color = (255,255,255)
                 #try:
                     #color = color_genes[GeneName]
                 #except KeyError:
@@ -643,11 +654,29 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                 #if has_regulator and not (has_core or has_otherbio or has_transporter):
                     #gene_category = "filter=\"url(#shadow_Regulator)\""
                         
-                identifier = BGCname+str(cds_num)
+                identifier = BGCname+'_'+str(cds_num)
+                print(identifier)
+                # Get color
+                color = (255,255,255)
+                if only_color_genes:
+                    color = (255,255,255) #chose other color?
+                    try:
+                        color = color_genes[identifier]
+                    except:
+                        pass
+                #try:
+                    #color = color_genes[GeneName]
+                #except KeyError:
+                    #color = new_color("gene")
+                    #new_color_genes[GeneName] = color
+                    #color_genes[GeneName] = color
+                    #pass
+
                 #X, Y, L, l, H, h, strand, color, color_contour, category, gid, domain_list
                 domain_list = identifiers[identifier]
                 should_draw_arrow = True
                 if module_list:
+                    #get doms in gene_list
                     gene_list = [info[3] for info in domain_list]
                     if include_list:
                         #only include domains from analysis
@@ -669,7 +698,11 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                     if not domains_in_gene in module_list[mod_i]:
                         should_draw_arrow = False
                 if should_draw_arrow:
-                    arrow = draw_arrow(additional_tabs, start+mX, add_origin_Y+mY+h, int(feature.location.end-feature.location.start)/scaling, l, H, h, strand, color, color_contour, gene_category, cds_tag, domain_list)
+                    arrow = draw_arrow(additional_tabs, start+mX,\
+                    add_origin_Y+mY+h,\
+                    int(feature.location.end-feature.location.start)/scaling,\
+                    l, H, h, strand, color, color_contour, gene_category,\
+                    cds_tag, domain_list, only_color_genes)
                     if arrow == "":
                         print("  (ArrowerSVG) Warning: something went wrong with {}".format(BGCname))
                     SVG_TEXT += arrow
@@ -774,7 +807,7 @@ def read_dom_hits(dom_hits_file,color_domains,pfam_info,scaling=30,H=30):
 
 
             # [X, L, H, domain_acc, color, color_contour]
-            identifier = row[0]+row[4]
+            identifier = row[0]+'_'+row[4]
             desc = pfam_info.get(domain_acc,('',''))
             identifiers[identifier].append([start, width, int(H - 2*internal_domain_margin), domain_acc, desc, color, color_contour])
     print('  read domains')
@@ -858,6 +891,12 @@ if __name__ == '__main__':
 
     files.reverse()
     domain_colours = read_color_domains_file(cmd.domains_colour_file)
+    if cmd.genes_colour_file:
+        gene_colours = read_color_genes_file(cmd.genes_colour_file)
+        only_colour_genes = True
+    else:
+        gene_colours = {}
+        only_colour_genes = False
     pfam_info = {}
     dom_hits,new_colour_doms = read_dom_hits(cmd.dom_hits_file,domain_colours,\
         pfam_info)
@@ -865,8 +904,9 @@ if __name__ == '__main__':
     for filename in files:
         print(filename)
         bgc = os.path.split(filename)[1].split('.gbk')[0]
-        SVG(True, cmd.outfile,filename,bgc,dom_hits,{},domain_colours,{},\
-            pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms)
+        SVG(True, cmd.outfile,filename,bgc,dom_hits,gene_colours,domain_colours,{},\
+            pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,\
+            only_color_genes=only_colour_genes)
         if modules_lda:
             for module in modules_lda[bgc]:
                 plot=True
@@ -874,11 +914,12 @@ if __name__ == '__main__':
                     if not module[0] in cmd.topic_include:
                         plot=False
                 if plot:
-                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},\
+                    SVG(True, cmd.outfile,filename,bgc,dom_hits,gene_colours,\
                         domain_colours,{}, pfam_info,-1,None,\
                         cmd.domains_colour_file,new_colour_doms,\
                         module_list=module, module_method = 'lda',\
-                        include_list=include_doms)
+                        include_list=include_doms,\
+                        only_color_genes=only_colour_genes)
         if modules_stat:
             mods = modules_stat[bgc]
             if not mods:
@@ -901,9 +942,10 @@ if __name__ == '__main__':
                     if not module[7] in cmd.include_stat_clan:
                         plot=False
                 if plot:
-                    SVG(True, cmd.outfile,filename,bgc,dom_hits,{},\
+                    SVG(True, cmd.outfile,filename,bgc,dom_hits,gene_colours,\
                         domain_colours,{}, pfam_info,-1,None,\
                         cmd.domains_colour_file,new_colour_doms,\
                         module_list=module, module_method = 'stat',\
-                        include_list=include_doms)
+                        include_list=include_doms,\
+                        only_color_genes=only_colour_genes)
         
