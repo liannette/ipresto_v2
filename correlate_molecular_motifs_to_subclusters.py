@@ -37,7 +37,9 @@ import time
 def get_commands():
     parser = argparse.ArgumentParser(description="A script to correlate\
         subcluster motifs to molecular motifs that are present/absent in\
-        a group of organisms. FDR is estimated with target-decoy approach")
+        a group of organisms. FDR can be estimated with a target-decoy\
+        approach, a maximum possible score is calculated and a permutation\
+        test is performed.")
     parser.add_argument("-m", "--molecular_motifs", help="Input file which is\
         a presence/absence matrix for molecular motifs in strains in tsv\
         format. The first line contains id followed by strain names\
@@ -62,6 +64,12 @@ def get_commands():
         default=5,type=int)
     parser.add_argument('-n','--n_resamples',help='The number of permutations\
         taken, default=500',default=500,type=int)
+    parser.add_argument('--annotation_m',help='Annotation csv file for\
+        molecular motifs, optional. Contains a header, first column motif\
+        names, last column annotation',default=False)
+    parser.add_argument('--annotation_s',help='Annotation csv file for\
+        subcluster motifs, optional. Contains a header, first column motif\
+        names, last column annotation',default=False)
     return parser.parse_args()
 
 def read_matrix(infile, remove=0.5, filtering=False):
@@ -269,6 +277,7 @@ def plot_scoring_matrix(target, max_len, decoy = False, plot_name = False,
         plt.savefig(plot_name)
     else:
         plt.show()
+    plt.close()
 
 def get_random_scores(m_motifs, m_used, s_motifs, s_used, strains_used,\
     verbose, cores, loops = 500):
@@ -338,12 +347,38 @@ def compare_target_to_random(target, list_decoy_matrix, m_used,s_used,\
             all_matrix[m_m][s_m] = pval
     return all_matrix
 
+def read_annotation(infile):
+    '''Returns dict with {motif_name:'annotation'}, annotation is last column
+
+    infile: str, file path to csv
+    '''
+    annot_dict = {}
+    with open(infile,'r') as inf:
+        inf.readline() #header
+        for line in inf:
+            line = line.strip('\r\n').split('","')
+            if len(line) == 1:
+                line = line[0].split(',') #account for quotes
+            mot = line[0].strip('"')
+            ann = line[-1].strip('"')
+            if ann == 'None':
+                ann = ''
+            annot_dict[mot] = ann
+    return annot_dict
+
 def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
-    filtering, remove, fdr, verbose, cores, resamples_n):
+    filtering, remove, fdr, verbose, cores, resamples_n, annotation_m,\
+    annotation_s):
     '''Combines all functions to make plot of target-decoy distr and outfile
 
-    molecular_infile, molecular_infile, outfile: str, filepaths to matrix
+    molecular_infile, sub_cluster_infile, outfile: str, filepaths to matrix
         files and to output file
+    filtering: bool, to filter motifs occurring in 'remove' or more strains
+    fdr: float, FDR cutoff in percentage
+    verbose: bool, print more info
+    cores: int, cores to use
+    resamples_n: int, rounds of resampling
+    annotation_m,annotation_s: str, filepaths to annotation files
     '''
     molecular_motifs, m_motif_names = read_matrix(molecular_infile,remove,\
         filtering)
@@ -392,6 +427,16 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
     cutoff_score, len_above_cutoff = calc_fdr_score(target_tuples,\
         decoy_tuples, fdr)
 
+    #get annotations if there are any
+    if annotation_m:
+        annot_m_m = read_annotation(annotation_m)
+    else:
+        annot_m_m = {}
+    if annotation_s:
+        annot_s_m = read_annotation(annotation_s)
+    else:
+        annot_s_m = {}
+
     with open(outfile,'w') as outf:
         outf.write('#{}% FDR cutoff: {}. {} values above cutoff\n'.format(\
             fdr, cutoff_score, len_above_cutoff))
@@ -409,8 +454,10 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
             ratio = ratio if ratio > 0 else 0
             ratios.append(ratio)
             pval = target_pvals[m_m][s_m]
-            outf.write('{}\t{}\t{:.2f}\t{:.3f}\n'.format(\
-                '\t'.join(map(str,tup)), max_s, ratio, pval))
+            m_m_an = annot_m_m.get(m_m,'')
+            s_m_an = annot_s_m.get(s_m,'')
+            outf.write('{}\t{}\t{:.2f}\t{:.3f}\t{}\t{}\n'.format(\
+                '\t'.join(map(str,tup)), max_s, ratio, pval, m_m_an, s_m_an))
     decoy_out = outfile.split('.txt')[0] + '_decoy_scores.txt'
     with open(decoy_out,'w') as outf:
         for tup in decoy_tuples:
@@ -471,7 +518,7 @@ if __name__ == '__main__':
 
     correlation_analysis(cmd.molecular_motifs,cmd.subcluster_motifs,\
         cmd.out_file, cmd.filter, cmd.remove, cmd.fdr_cutoff, cmd.verbose,\
-        cmd.cores, cmd.n_resamples)
+        cmd.cores, cmd.n_resamples, cmd.annotation_m, cmd.annotation_s)
 
     end = time.time()
     t = end-start
