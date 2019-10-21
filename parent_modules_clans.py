@@ -147,7 +147,7 @@ if __name__ == '__main__':
         outf.write(header)
         for line in inf:
             splitline = line.strip().split('\t')
-            mod = tuple(splitline[-2].split(','))
+            mod = tuple(splitline[-3].split(','))
             clan = int(splitline[-1])
             try:
                 mods = dels_dict[clan]
