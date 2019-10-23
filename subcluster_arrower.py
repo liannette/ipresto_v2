@@ -1,15 +1,15 @@
 #! /usr/bin/python
-
+'''
 ######################################################################
 #                                                                    #
 #           PLOT ARROWS FOR GENE CLUSTER GIVEN A GenBank FILE        #
 #                           Peter Cimermancic                        #
 #                               April 2010                           #
 #                heavily modified by Jorge Navarro 2016              #
-#                    mofified by Joris Louwen 2019                   #
+#                    modified by Joris Louwen 2019                   #
 #               for the purpose of plotting sub-clusters             #
 ######################################################################
-
+'''
 # Makes sure the script can be used with Python 2 as well as Python 3.
 from __future__ import print_function, division
 from sys import version_info
@@ -547,7 +547,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     loci = 0
     feature_counter = 1
     records = list(SeqIO.parse(GenBankFile, "genbank"))
-    for seq_record in records:
+    #todo: figure out how to deal with multiple record genbanks
+    for seq_record in records[:1]:
         add_origin_Y = loci * (2*(h+mY) + H)
 
         # draw a line that coresponds to cluster size
