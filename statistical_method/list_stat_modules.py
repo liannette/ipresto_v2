@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 '''
 Make a list of statistical method modules like for lda.
+
+Takes as input the bgcs_with_mods.txt and the mods info, either a modules.txt
+file or a modules.txt clustering (families or clans).
 Author: Joris Louwen
 '''
 
@@ -9,8 +12,15 @@ import os
 from sys import argv
 
 if __name__ == '__main__':
-    bgc_with_mods = argv[1]
-    mod_info = argv[2]
+    if argv[1] == '-h':
+        raise SystemExit('Help: bgcs_with_mods.txt and'+
+            ' modules.txt files. Modules.txt can be clustered. \nExiting')
+    elif len(argv) != 3:
+        raise SystemExit('Incorrect input. Enter bgcs_with_mods.txt and'+
+            ' modules.txt files. Modules.txt can be clustered. \nExiting')
+    else:
+        bgc_with_mods = argv[1]
+        mod_info = argv[2]
 
     out_bgc = bgc_with_mods.split('.txt')[0]+'_list.txt'
     out_mods = mod_info.split('.txt')[0]+'_with_bgcs.txt'
