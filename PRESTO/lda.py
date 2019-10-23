@@ -434,10 +434,15 @@ def plot_topic_matches_lengths(lengths, outname):
     fig, ax = plt.subplots()
     scatter = ax.scatter(bgc_len, topic_len, c=sqrt(counts), s=2.5,vmin=1,\
         vmax=sqrt(m_counts), cmap='hot')
+    if m_counts < 100:
+        second_point = 1
+    else:
+        second_point = 20
     leg_range = [1]+[round(x,-1) for x in \
-        range(20,m_counts,int(m_counts/4))]
-    if len(leg_range) == 4:
-        leg_range.append(round(m_counts,-1))
+        range(second_point,m_counts+1,ceil(m_counts/4))]
+    if len(leg_range) <= 4:
+        leg_range.append(m_counts)
+    leg_range = sorted(set(leg_range))
     kw = dict(num=leg_range,func=lambda c: c**2)
     legend = ax.legend(*scatter.legend_elements(**kw), loc='upper left',\
         title='Occurrence')
@@ -968,19 +973,23 @@ if __name__ == '__main__':
         level=logging.INFO)
 
     bgcs = read2dict(cmd.bgcfile)
-    with open(cmd.modfile, 'r') as inf:
-        modules = {}
-        #{modules:[info]}
-        for line in inf:
-            line = line.strip().split('\t')
-            mod = tuple(line[-1].split(',')) #now a tuple of str
-            modules[mod] = line[:-1]
+    if cmd.modfile:
+        with open(cmd.modfile, 'r') as inf:
+            modules = {}
+            #{modules:[info]}
+            for line in inf:
+                line = line.strip().split('\t')
+                mod = tuple(line[-1].split(',')) #now a tuple of str
+                modules[mod] = line[:-1]
+    else:
+        modules = False
     if cmd.classes:
         bgc_classes_dict = read2dict(cmd.classes, sep='\t',header=True)
     else:
         bgc_classes_dict = {bgc:'None' for bgc in bgcs}
 
-    bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False)
+    if not cmd.run_on_existing_model:
+        bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False)
 
     if cmd.amplify:
         bgc_items = []
@@ -1017,7 +1026,8 @@ if __name__ == '__main__':
         num_topics=cmd.topics, amplif=cmd.amplify, plot=cmd.plot, \
         known_subcl=known_subclusters)
 
-    plot_convergence(log_out,cmd.iterations)
+    if not cmd.run_on_existing_model:
+        plot_convergence(log_out,cmd.iterations)
 
     end = time.time()
     t = end-start
