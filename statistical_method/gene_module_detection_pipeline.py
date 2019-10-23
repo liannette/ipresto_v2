@@ -240,7 +240,7 @@ def convert_gbk2fasta(file_path, out_folder, exclude_contig_edge, min_genes,\
                 head = head.replace("<","")
                 header = ">{}_{}".format(head, num_genes+1)
                 header = header.replace(' ','') #hmmscan uses space as delim
-                seqs[header] = feature.qualifiers['translation'][0]
+                seqs[header] = feature.qualifiers.get('translation',[""])[0]
                 if seqs[header] == '':
                     print('  {} does not have a translation'.format(header))
                 num_genes +=1
