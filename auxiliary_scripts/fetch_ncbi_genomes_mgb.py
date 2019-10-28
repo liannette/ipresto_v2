@@ -23,26 +23,38 @@ def get_commands():
         result column seperated by whitespaces. Can be more than one file.\
         Can also be one directory with files (only one directory)',
         nargs='+')
+    parser.add_argument('-s','--strain_list',help='Txt file with a strain\
+        name on each line, optional. Overwrites -i',default=False)
     parser.add_argument('-o','--out_file',help='Directory of output files.')
     return parser.parse_args()
 
-def retrieve_genomes(in_files,out_folder):
+def retrieve_genomes(in_files,out_folder,orgn_list=False):
     '''
     Fetch all nucleotide entries for organisms in all files, write2out_folder
 
     in_files: list of str, file locations
     out_folder: str, file location
     '''
-    organisms = parse_organisms(in_files)
+    if orgn_list:
+        organisms = orgn_list
+    else:
+        organisms = parse_organisms(in_files)
     results = []
+    try_again = []
     for orgn in organisms:
         try:
             results.append(retrieve_genome(orgn,out_folder))
-        except urllib.error.URLError:
-            time.sleep(10)
+        except (urllib.error.URLError,RuntimeError):
+            try_again.append(orgn)
+    for orgn in try_again:
+        try:
             results.append(retrieve_genome(orgn,out_folder))
+        except (urllib.error.URLError,RuntimeError):
+            print('No assembly found for',orgn)
+            results.append(None)
     print('{} assemblies downloaded successfully, {} failed'.format(\
-        results==True,results==None))
+        len([1 for a in results if a==True]),len([1 for a in results \
+        if a==None])))
 
 def retrieve_genome(orgn, out_folder):
     '''Download assembly of orgn into out_folder
@@ -59,6 +71,7 @@ def retrieve_genome(orgn, out_folder):
     except IndexError:
         print('No assembly found for',orgn)
         return
+    match = None
     for gbk_acc in record['IdList']:
         # gbk_acc = record['IdList'][0]
         handle = Entrez.efetch(db="nucleotide", id=gbk_acc,\
@@ -131,7 +144,8 @@ if __name__ == '__main__':
         in_files_main = glob(os.path.join(cmd.in_file[0],'*.xml'))
     else:
         in_files_main = cmd.in_file
-    retrieve_genomes(in_files_main, cmd.out_file)
+
+    retrieve_genomes(in_files_main, cmd.out_file, cmd.strain_list)
 
     end = time.time()
     t = end-start
