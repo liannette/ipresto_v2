@@ -9,6 +9,8 @@
 #                    modified by Joris Louwen 2019                   #
 #               for the purpose of plotting sub-clusters             #
 ######################################################################
+
+Note: Only handles first locus from given gbk
 '''
 # Makes sure the script can be used with Python 2 as well as Python 3.
 from __future__ import print_function, division
