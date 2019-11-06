@@ -8,51 +8,20 @@ based on similarity, and detect sub-clusters based on a statistical method
 and an LDA alorithm.
 
 Usage:
-python3 gene_module_detection_pipeline.py -h
+python3 presto-stat.py -h
 
 Example usage:
-python3 gene_module_detection_pipeline.py -i ./testdata -o ./testdata_domains
+python3 presto-stat.py -i ./testdata -o ./testdata_domains
 --hmm_path ./domains/Pfam_100subs_tc.hmm --exclude final -c 12 -e True
 
 Notes:
-Only handles gbk files with one cluster
-
-Layout:
-get_commands
-process_gbks
-convert_gbk2fasta
-run_hmmscan
-hmmscan_wrapper
-parse_domtab
-sign_overlap
-parse_dom_wrapper
-read_clusterfile
-calc_adj_index
-is_contained
-generate_edges
-generate_edge
-generate_graph
-find_representatives
-find_all_representatives
-write_filtered_bgcs
-remove_infr_doms
-remove_dupl_doms
-count_adj
-count_coloc
-makehash
-count_interactions
-calc_adj_pval_wrapper
-calc_adj_pval
-calc_coloc_pval_wrapper
-keep_lowest_pval
-visualise_graph
-generate_modules_wrapper
-generate_modules
-write_module_file
+Only handles first cluster from a gbk file
 
 Required:
-python 3
+python 3 (build on python 3.6)
+Biopython
 hmmscan
+networkx
 '''
 
 import argparse
@@ -77,9 +46,12 @@ from sympy import binomial as ncr
 import time
 
 def get_commands():
-    parser = argparse.ArgumentParser(description="A script to turn bgcs in \
-        gbk files into strings of domains using a domain hmm database and to \
-        reduce redundancy by filtering out similar bgcs.")
+    parser = argparse.ArgumentParser(description="The PRESTO-STAT module from\
+        iPRESTO which detects statistical sub-clusters in BGCs by turning\
+        BGCs from gbk files into strings of domains using a domain hmm\
+        database, after which redundancy is reduced by filtering out similar\
+        BGCs, and sub-clusters are detected according to Del Carratore et\
+        al. (2019).")
     parser.add_argument("-i", "--in_folder", dest="in_folder", help="Input \
         directory of gbk files", required=True)
     parser.add_argument("--exclude", dest="exclude", default=["final"],
@@ -767,7 +739,7 @@ def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
         for dom, count in domc.most_common():
             stat.write("{}\t{}\n".format(';'.join(dom),count))
     print("\nFiltered clusterfile containing {} bgcs: {}".format(\
-        len(uniq_list)+len(rep_dict.keys()),filt_file))
+        len(uniq_list)+len(rep_dict.keys()),filter_file))
     print("Representative bgcs file: {}".format(rep_file))
     return rep_file
 
