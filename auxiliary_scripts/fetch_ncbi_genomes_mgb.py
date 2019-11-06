@@ -36,7 +36,11 @@ def retrieve_genomes(in_files,out_folder,orgn_list=False):
     out_folder: str, file location
     '''
     if orgn_list:
-        organisms = orgn_list
+        with open(orgn_list,'r') as inf:
+            organisms = []
+            for line in inf:
+                line = line.strip()
+                organisms.append(line)
     else:
         organisms = parse_organisms(in_files)
     results = []
@@ -91,14 +95,14 @@ def retrieve_genome(orgn, out_folder):
         'wget -q --recursive -e robots=off --reject "index.html"' +
         ' --no-host-directories --cut-dirs=6 {}'.format(ftp_url) +
         ' -P {}'.format(out_folder))
-    out = glob(out_folder+asmbl+'*.gbff')
+    out = glob(out_folder+asmbl+'*.gbk')
     if not out:
         subprocess.check_call(download_command,shell=True)
         out_dir = glob(out_folder+asmbl+'*/')
         gzip_genome = glob(os.path.join(out_dir[0],\
             asmbl+'*genomic.gbff.gz'))[0]
         out_genome = os.path.join(out_folder,\
-            os.path.split(gzip_genome)[1].split('.gz')[0])
+            os.path.split(gzip_genome)[1].split('.gbff')[0]+'.gbk')
         subprocess.check_call('gunzip -c {} > {}'.format(gzip_genome,out_genome),\
             shell=True)
         subprocess.check_call('rm -r {}'.format(out_dir[0]),shell=True)
