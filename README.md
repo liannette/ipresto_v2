@@ -17,4 +17,4 @@ Developed by Joris Louwen.
 Supervisors: Marnix Medema (PI), Justin van der Hooft and Satria Kautsar.
 All from the Bioinformatics group at Wageningen University. 
 
-![Workflow](final_workflow_black_900ppi.png)
+![Workflow](final_workflow_black_900ppi.png){:height="50%" width="50%"}
