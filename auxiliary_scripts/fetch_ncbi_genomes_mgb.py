@@ -80,7 +80,7 @@ def retrieve_genome(orgn, out_folder):
         # gbk_acc = record['IdList'][0]
         handle = Entrez.efetch(db="nucleotide", id=gbk_acc,\
             rettype="gb", retmode="text")
-        gbk_data = handle.read()[:1000]
+        gbk_data = handle.read()[:5000]
         match = re.search(r'Assembly: (.+?\.\d)',gbk_data)
         if match:
             break
