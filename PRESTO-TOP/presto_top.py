@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
 Author: Joris Louwen
-Script to find modules with LDA algorithm.
+
+Script to perform PRESTO-TOP method within iPRESTO.
+It finds sub-cluster motifs from a clusterfile with the LDA algorithm.
+
+Usage: presto_top.py -h
+
+Example usage:
+python3 presto_top.py -i my_clusterfile.csv -o my_output_folder -c 10
+        -t 1000 -C 3000 -I 2000 --min_genes 2 -f 0.95 -n 75 --classes
+        my_bgc_classes.txt --known_subclusters known_subcl.txt
 """
 
 import os
