@@ -41,7 +41,7 @@ on by default but can be turned of by toggling --no_redundancy_filtering.
 ```
 #presto-stat with GBK folder input
 python3 presto_stat.py -i my_gbk_dir -o output_dir --hmm_path Pfam_A.hmm
-        --exclude final -c 12 -e True -p 0.1
+        --exclude final -c 12 -e True -p 0.1 --include_list modified_domains.txt
 
 #presto_stat with clusterfile input
 # -i -o and --hmm_path have to be supplied symbolically
@@ -74,9 +74,15 @@ subcluster_arrower.py creates powerful visualisations of the sub-cluster output.
 One can provide one or more BGCs in GenBank format.
 ```
 #one BGC
-python3 subcluster_arrower.py
+python3 subcluster_arrower.py --one -f BGC0000052.gbk -c domains_color_file.tsv
+        -d preprocessing_domhits_file.txt -o BGC0000052.html
+        -s bgcs_queried_to_presto_stat_modules_list.txt -l bgc_topics.txt
+        --include_list modified_domains.txt
 #multiple BGCs
-python3 subcluster_arrower.py
+python3 subcluster_arrower.py -f file_with_gbk_locations.txt
+        -c domains_color_file.tsv -d preprocessing_domhits_file.txt
+        -o BGC0000052.html -s bgcs_queried_to_presto_stat_modules_list.txt
+        -l bgc_topics.txt --include_list modified_domains.txt
 ```
 
 An example clusterfile:
