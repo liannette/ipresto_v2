@@ -61,7 +61,7 @@ def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
     Matches are only reported if at least two genes match, these can be two
     of the same genes if the prob is 1.5 or higher (close enough to two)
     '''
-    ys=[cutoff+i*steps for i in range(round((1.0-cutoff)/steps)+1)]
+    ys=[round(cutoff+i*steps,1) for i in range(round((1.0-cutoff)/steps)+1)]
     xs=[0]*len(ys)
     for info in known_subcl_matches.values():
         if len(info) > 0:
@@ -70,9 +70,11 @@ def line_plot_known_matches(known_subcl_matches, outname, cutoff,steps=0.1):
                     if overlap[0] >= thresh and overlap[1] > 1:
                         xs[i]+=1
                         break
-    print('There are {} known sub_clusters with at least one'.format(xs[0])+
-        ' overlap of two genes with a minimum overlap % of {}'.format(ys[0]))
-    print(ys,xs)
+    print(('\nThis method detects {} known sub-clusters with an overlap'+
+        ' cutoff of {}. With all different overlap cutoffs:').format(xs[2],\
+        ys[2]))
+    print(', '.join(map(str,ys)))
+    print(', '.join(map(str,xs)))
     fig,ax = plt.subplots()
     line = ax.plot(ys,xs)
     ax.set_ylim(0,len(known_subcl_matches))
