@@ -658,7 +658,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
                     #gene_category = "filter=\"url(#shadow_Regulator)\""
                         
                 identifier = BGCname+'_'+str(cds_num)
-                print(identifier)
+
                 # Get color
                 color = (255,255,255)
                 if only_color_genes:
