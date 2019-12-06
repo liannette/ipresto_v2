@@ -70,14 +70,19 @@ def get_commands():
     parser.add_argument('--annotation_s',help='Annotation csv file for\
         subcluster motifs, optional. Contains a header, first column motif\
         names, last column annotation',default=False)
+    parser.add_argument('--no_strain_filtering', help='If toggled, strains\
+        are not filtered out when containing less than 2 motifs', action=\
+        'store_true')
     return parser.parse_args()
 
-def read_matrix(infile, remove=0.5, filtering=False):
+def read_matrix(infile, remove=0.5, filtering=False, filt_strains=True):
     '''
     Returns motif matrix {strain:set(present_motifs)} and set(motifs)
 
     infile: str, filepath
     filtering: bool, filter out motifs occurring in more than half the strains
+    filt_strains: bool, filter out strains if they contain < 2 motifs, default
+        True
     '''
     print('\nReading motif file from {}'.format(infile))
     strain2motif = defaultdict(set)
@@ -94,9 +99,12 @@ def read_matrix(infile, remove=0.5, filtering=False):
     if filtering:
         strain2motif,rownames = filter_motifs(strain2motif,\
             remove)
-    filtered_strain2motif,rownames = filter_strains(strain2motif)
-    print('  filtered out {} strains containing only one motif'.format(\
-        len(strain2motif) - len(filtered_strain2motif)))
+    if filt_strains:
+        filtered_strain2motif,rownames = filter_strains(strain2motif)
+        print('  filtered out {} strains containing only one motif'.format(\
+            len(strain2motif) - len(filtered_strain2motif)))
+    else:
+        filtered_strain2motif = strain2motif
     print("Motif matrix contains {} strains, {} motifs and {} 1's".format(\
         len(filtered_strain2motif), len(rownames), sum(\
         len(vals) for vals in filtered_strain2motif.values())))
@@ -368,7 +376,7 @@ def read_annotation(infile):
 
 def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
     filtering, remove, fdr, verbose, cores, resamples_n, annotation_m,\
-    annotation_s):
+    annotation_s, filt_strains):
     '''Combines all functions to make plot of target-decoy distr and outfile
 
     molecular_infile, sub_cluster_infile, outfile: str, filepaths to matrix
@@ -381,9 +389,9 @@ def correlation_analysis(molecular_infile, sub_cluster_infile, outfile,\
     annotation_m,annotation_s: str, filepaths to annotation files
     '''
     molecular_motifs, m_motif_names = read_matrix(molecular_infile,remove,\
-        filtering)
+        filtering, filt_strains)
     subcluster_motifs, s_motif_names = read_matrix(sub_cluster_infile,\
-        remove, filtering)
+        remove, filtering, filt_strains)
 
     #only compare strains present in both matrices and motifs in these strains
     used_strains = sorted(set(molecular_motifs) & set(subcluster_motifs))
@@ -516,9 +524,15 @@ if __name__ == '__main__':
     random.seed(595) #get same output every time
     cmd = get_commands()
 
+    if cmd.no_strain_filtering:
+        strain_filtering = False
+    else:
+        strain_filtering = True
+
     correlation_analysis(cmd.molecular_motifs,cmd.subcluster_motifs,\
         cmd.out_file, cmd.filter, cmd.remove, cmd.fdr_cutoff, cmd.verbose,\
-        cmd.cores, cmd.n_resamples, cmd.annotation_m, cmd.annotation_s)
+        cmd.cores, cmd.n_resamples, cmd.annotation_m, cmd.annotation_s,\
+        strain_filtering)
 
     end = time.time()
     t = end-start
