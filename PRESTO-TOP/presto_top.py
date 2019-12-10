@@ -473,7 +473,7 @@ def plot_topics_per_bgc(topics_per_bgc, outname):
     plt.close()
     plt.bar(xs, h)
     plt.xlabel('Number of topics per BGC')
-    plt.ylabel('Occurence')
+    plt.ylabel('Occurrence')
     plt.title('Topics per BGC')
     plt.savefig(outname)
     plt.close()
