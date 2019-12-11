@@ -10,7 +10,15 @@
 #               for the purpose of plotting sub-clusters             #
 ######################################################################
 
-Note: Only handles first locus from given gbk
+Note:
+    -Only handles first locus from given gbk
+    -Currently all domain-combinations from a sub-cluster are visualised,
+        so if a domain-combination from a sub-cluster occurs multiple times
+        in a BGC, all those domain-combinations are visualised in the
+        sub-cluster.
+    -For each BGC, this script loads a given gbk file again for each
+        sub-cluster detected in the BGC. Script will get faster if this is
+        resolved.
 '''
 # Makes sure the script can be used with Python 2 as well as Python 3.
 from __future__ import print_function, division
@@ -825,25 +833,24 @@ def read_modules(filename, lda_or_stat='lda'):
     print('\nReading modules')
     with open(filename,'r') as inf:
         header = '' #just in case
-        for boolval, lines in groupby(inf, lambda line: line[0] == '>'):
-            if boolval:
-                header = next(lines).strip()[1:]
-            elif not boolval:
-                for mod in lines:
-                    if not mod.startswith('cl') and not mod.startswith('kn'):
-                        mod = mod.strip().split('\t')
-                        if lda_or_stat == 'lda':
-                            mod_tup = tuple([m.split(':')[0] for m in \
-                                mod[-1].split(',')])
-                            mod_list = mod[:-1] + [mod_tup]
-                        elif lda_or_stat == 'stat':
-                            mod_tup = tuple(mod[5].split(','))
-                            mod_list = mod[:5] + [mod_tup] + mod[6:]
-                        else:
-                            raise SystemExit(\
-                                '\nInvalid method while reading modules, '+
-                                'should be either lda or stat')
-                        mod_dict[header].append(mod_list)
+        for mod in inf:
+            if mod.startswith('>'):
+                header = mod.strip()[1:]
+            else:
+                if not mod.startswith('cl') and not mod.startswith('kn'):
+                    mod = mod.strip().split('\t')
+                    if lda_or_stat == 'lda':
+                        mod_tup = tuple([m.split(':')[0] for m in \
+                            mod[-1].split(',')])
+                        mod_list = mod[:-1] + [mod_tup]
+                    elif lda_or_stat == 'stat':
+                        mod_tup = tuple(mod[5].split(','))
+                        mod_list = mod[:5] + [mod_tup] + mod[6:]
+                    else:
+                        raise SystemExit(\
+                            '\nInvalid method while reading modules, '+
+                            'should be either lda or stat')
+                    mod_dict[header].append(mod_list)
     return mod_dict
 
 def read_txt(in_file):
@@ -878,6 +885,7 @@ if __name__ == '__main__':
         modules_lda = cmd.modules_lda
     if cmd.modules_stat:
         modules_stat = read_modules(cmd.modules_stat,lda_or_stat='stat')
+        print(len(modules_stat))
     else:
         modules_stat = cmd.modules_stat
     with open(cmd.outfile,'w') as outf:
@@ -926,7 +934,8 @@ if __name__ == '__main__':
         if modules_stat:
             mods = modules_stat[bgc]
             if not mods:
-                print('No statistical modules present')
+                print('\tNo statistical modules present')
+                continue
             if len(mods[0]) == 7:
                 #sort on family
                 mods.sort(key=lambda x: int(x[-1]))
