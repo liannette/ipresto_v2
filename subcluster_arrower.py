@@ -885,7 +885,6 @@ if __name__ == '__main__':
         modules_lda = cmd.modules_lda
     if cmd.modules_stat:
         modules_stat = read_modules(cmd.modules_stat,lda_or_stat='stat')
-        print(len(modules_stat))
     else:
         modules_stat = cmd.modules_stat
     with open(cmd.outfile,'w') as outf:
