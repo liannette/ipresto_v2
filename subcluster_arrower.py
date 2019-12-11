@@ -830,7 +830,7 @@ def read_modules(filename, lda_or_stat='lda'):
     lda_or_stat: str, either lda or stat to specify the method
     '''
     mod_dict = defaultdict(list)
-    print('\nReading modules')
+    print('\nReading modules ({})'.format(lda_or_stat))
     with open(filename,'r') as inf:
         header = '' #just in case
         for mod in inf:
@@ -912,6 +912,7 @@ if __name__ == '__main__':
     dom_hits,new_colour_doms = read_dom_hits(cmd.dom_hits_file,domain_colours,\
         pfam_info)
 
+    print('\nVisualising sub-clusters for:')
     for filename in files:
         print(filename)
         bgc = os.path.split(filename)[1].split('.gbk')[0]
