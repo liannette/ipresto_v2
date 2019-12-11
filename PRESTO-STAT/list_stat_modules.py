@@ -37,6 +37,8 @@ if __name__ == '__main__':
                 bgc_dct[bgc] = mod_nums
                 for mod_num in mod_nums:
                     mod_dct[mod_num].append(bgc)
+            else:
+                bgc_dct[bgc] = []
 
     with open(mod_info,'r') as inf:
         modules = {}
