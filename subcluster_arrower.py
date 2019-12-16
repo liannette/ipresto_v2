@@ -863,20 +863,6 @@ def read_txt(in_file):
     return lines
 
 if __name__ == '__main__':
-    # filenames = sys.argv[1] #file with list of BGC gbk files to plot
-    # domains_colour_file_path = sys.argv[2]
-    # dom_hits_file = sys.argv[3]
-    # outfile = sys.argv[4]
-    # if len(sys.argv) >= 6:
-        # modsfile = sys.argv[5]
-        # modules_lda = read_modules(modsfile)
-    # else:
-        # modules_lda = False
-    # if len(sys.argv) == 7:
-        # topic_include = sys.argv[6]
-    # else:
-        # topic_include = False
-
     cmd = get_commands()
 
     if cmd.modules_lda:
@@ -887,19 +873,21 @@ if __name__ == '__main__':
         modules_stat = read_modules(cmd.modules_stat,lda_or_stat='stat')
     else:
         modules_stat = cmd.modules_stat
+
     with open(cmd.outfile,'w') as outf:
         pass #clear outfile
+
     if cmd.one:
         files = [cmd.filenames]
     else:
         with open(cmd.filenames,'r') as inf:
             files = [line.strip() for line in inf]
+
     if cmd.include_list:
             include_doms = read_txt(cmd.include_list)
     else:
         include_doms = False
 
-    files.reverse()
     domain_colours = read_color_domains_file(cmd.domains_colour_file)
     if cmd.genes_colour_file:
         gene_colours = read_color_genes_file(cmd.genes_colour_file)
@@ -908,6 +896,7 @@ if __name__ == '__main__':
         gene_colours = {}
         only_colour_genes = False
     pfam_info = {}
+
     dom_hits,new_colour_doms = read_dom_hits(cmd.dom_hits_file,domain_colours,\
         pfam_info)
 
@@ -960,4 +949,3 @@ if __name__ == '__main__':
                         module_list=module, module_method = 'stat',\
                         include_list=include_doms,\
                         only_color_genes=only_colour_genes)
-        
