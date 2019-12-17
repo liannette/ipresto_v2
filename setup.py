@@ -21,5 +21,16 @@ setuptools.setup(
     python_requires='>=3.6',
     install_requires=[
           'Bio',
+          'matplotlib',
+          'networkx',
+          'numpy',
+          'gensim',
+          'pyLDAvis',
+          'pandas',
+          'scipy',
+          'seaborn'
+          'statsmodels',
+          'sympy'
+          
       ],
 )
