@@ -13,6 +13,7 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://git.wageningenur.nl/bioinformatics/iPRESTO",
     packages=setuptools.find_packages(),
+    include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GNU Affero General Public License v3",
@@ -31,6 +32,5 @@ setuptools.setup(
           'seaborn'
           'statsmodels',
           'sympy'
-          
       ],
 )
