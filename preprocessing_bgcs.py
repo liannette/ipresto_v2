@@ -23,7 +23,7 @@ Biopython
 networkx
 '''
 import sys
-sys.path.insert(1, sys.path[0]+'/PRESTO-STAT/')
+sys.path.insert(1, sys.path[0]+'/presto_stat/')
 from presto_stat import *
 
 import argparse
