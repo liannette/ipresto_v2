@@ -29,7 +29,7 @@ setuptools.setup(
           'pyLDAvis',
           'pandas',
           'scipy',
-          'seaborn'
+          'seaborn',
           'statsmodels',
           'sympy'
       ],
