@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="iPRESTO",
-    version="1.0",
+    version="1.0.1",
     author="Joris Louwen",
     author_email="jorislouwen@hotmail.com",
     description="Detection of biosynthetic sub-clusters",
