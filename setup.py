@@ -9,7 +9,7 @@ all_scripts = glob.glob('**/*[A-Za-z0-9].py', recursive=True)
 
 setuptools.setup(
     name="iPRESTO",
-    version="1.0.2",
+    version="1.0.3",
     author="Joris Louwen",
     author_email="jorislouwen@hotmail.com",
     description="Detection of biosynthetic sub-clusters",
@@ -25,7 +25,7 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-          'Bio',
+          'biopython',
           'matplotlib',
           'networkx',
           'numpy',
