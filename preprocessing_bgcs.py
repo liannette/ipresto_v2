@@ -66,8 +66,9 @@ def get_commands_local():
         overlap percentage domains are considered to overlap. Domain with \
         the best score is kept (default=0.1).")
     parser.add_argument("-e", "--exclude_contig_edge",
-        dest="exclude_contig_edge", default=True, type=bool, help="\
-        Exclude clusters that lie on a contig edge")
+        dest="exclude_contig_edge", default=False, type=bool, help="\
+        Exclude clusters that lie on a contig edge (default = false)",
+        action='store_true')
     parser.add_argument("-m", "--min_genes", dest="min_genes", default=0,
         help="Provide the minimum size of a BGC to be included in the \
         analysis. Default is 0 genes", type=int)
