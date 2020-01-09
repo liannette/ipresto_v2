@@ -22,10 +22,9 @@ hmmscan
 Biopython
 networkx
 '''
-import sys
-sys.path.insert(1, sys.path[0]+'/presto_stat/')
-from presto_stat import *
+from presto_stat.presto_stat import *
 
+import sys
 import argparse
 from Bio import SeqIO
 from Bio import SearchIO

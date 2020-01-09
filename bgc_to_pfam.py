@@ -20,11 +20,9 @@ python 3
 hmmscan
 Biopython
 '''
+from presto_stat.presto_stat import *
 
 import sys
-sys.path.insert(1, sys.path[0]+'/presto_stat/')
-from presto_stat import *
-
 import os
 from glob import glob, iglob
 import subprocess

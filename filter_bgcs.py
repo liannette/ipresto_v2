@@ -16,11 +16,9 @@ python3 filter_bgcs.py -i ../testdata_domains/testdata_clusterfile.csv
 Required:
 networkx (https://github.com/networkx/networkx)
 '''
+from presto_stat.presto_stat import *
 
 import sys
-sys.path.insert(1, sys.path[0]+'/presto_stat/')
-from presto_stat import *
-
 import os
 from glob import glob, iglob
 import subprocess
