@@ -85,7 +85,9 @@ python3 subcluster_arrower.py -f file_with_gbk_locations.txt
         -l bgc_topics.txt --include_list biosynthetic_domains.txt
 ```
 
-An example clusterfile:
+See below for an example clusterfile. Genes (and BGC names) are separated by
+commas, domains in the same gene by semi-colons and genes without domains are
+represented by a dash.
 ```
 BGC_name1,Lactamase_B,adh_short,ketoacyl-synt;Ketoacyl-synt_C,-\n
 BGC_name2,-,Lant_dehydr_N;Lant_dehydr_C,LANC_like\n
@@ -97,7 +99,14 @@ created with https://github.com/satriaphd/build_subpfam.
 ## Dependencies
 
 iPRESTO is build in python3.6. It requires the HMMER suit (http://hmmer.org/),
-as well as some python packages. Python packages can be easily installed with pip or
-setup.py.
+as well as some python packages. The required python packages are automatically
+installed when using pip or setup.py.
+```
+#example install with pip
+python3 -m pip --user install iPRESTO
+
+#installing without dependencies
+python3 -m pip --user --no-deps install iPRESTO
+```
 
 
