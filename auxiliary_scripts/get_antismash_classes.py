@@ -40,10 +40,17 @@ def get_commands():
     parser.add_argument("-c", "--cores", dest="cores", default=cpu_count(), 
         help="Set the number of cores the script may use (default: use all \
         available cores)", type=int)
+    parser.add_argument("-e", "--exclude_contig_edge", default = False,\
+        action="store_true", help="Exclude bgcs laying on a contig edge,\
+        (default: False)")
+    parser.add_argument("-d", "--description", help="Get the description line\
+        instead of the class information. Description line contains organism\
+        and contig number (usually)", action="store_true",
+        default=False)
     return parser.parse_args()
 
 def process_gbks(input_folder, output_file, exclude_contig_edge,\
-    cores, verbose):
+    cores, description, verbose):
     '''Convert gbk files from input folder to fasta files for each gbk file
 
     input_folder, output_file: str
@@ -55,7 +62,8 @@ def process_gbks(input_folder, output_file, exclude_contig_edge,\
     done = []
     pool = Pool(cores, maxtasksperchild=250)
     for file_path in files:
-        pool.apply_async(convert_gbk2fasta, args=(file_path, True, verbose),\
+        pool.apply_async(convert_gbk2fasta, args=(file_path, \
+            exclude_contig_edge, description, verbose),\
             callback=lambda x: done.append(x))
     pool.close()
     pool.join()
@@ -69,7 +77,7 @@ def process_gbks(input_folder, output_file, exclude_contig_edge,\
         for class_tup in class_tups:
             outf.write('{}\n'.format('\t'.join(class_tup)))
 
-def convert_gbk2fasta(file_path, exclude_contig_edge, verbose):
+def convert_gbk2fasta(file_path, exclude_contig_edge, description, verbose):
     '''Retrieve a tuple of (name,class) from one gbk file
 
     file_path, out_folder: strings
@@ -85,6 +93,8 @@ def convert_gbk2fasta(file_path, exclude_contig_edge, verbose):
     except ValueError as e:
         print(" Excluding {}: {}".format(file_path, e))
         return
+    if description:
+        return record.description
     for feature in record.features:
         if feature.type == 'cluster':
             if "contig_edge" in feature.qualifiers:
@@ -103,7 +113,8 @@ if __name__ == '__main__':
     start = time.time()
     cmd = get_commands()
 
-    process_gbks(cmd.in_folder, cmd.out_file, True, cmd.cores, False)
+    process_gbks(cmd.in_folder, cmd.out_file, cmd.exclude_contig_edge, \
+        cmd.cores, cmd.description, False)
 
     end = time.time()
     t = end-start
