@@ -20,6 +20,7 @@ python3 link_np_to_bgc.py -h
 '''
 
 import argparse
+from collections import defaultdict
 from glob import glob, iglob
 import os
 import time
@@ -104,23 +105,64 @@ def link_np_to_bgc(np_dict, tax_dict, motif_dict):
     np_dict: dict, {NPatlas_id:[genus,species]}
     tax_dict: dict, {bgc: [taxonomy info]}
     motif_dict: dict, {bgc: [info_motif_match]} bgcs in the motif of interest
+    result_dict: {np: {'genus': ['bgc\ttaxonomy info'],
+        'species: ['bgc\ttaxonomy info'] } } Meaning a match only to the genus
+        or also a match to the species name, strain matching is not included
+        for now
     '''
-    result_dict = {}
+    result_dict = defaultdict(dict)
     #get tax from bgcs in motif
     motif_tax = {bgc:tax_dict[bgc] for bgc in motif_dict if bgc in tax_dict}
-
     for np, info in np_dict.items():
         genus, spec = info[:2]
-        print(np,genus)
-        print(spec)
+        #there might be spaces ea 'sp. CNQ-418', 'aeruginosa T 359'
+        #for now just match on first string in spec, ie sp. or aeruginosa
+        spec_l = spec.split()
+        # if spec_l[0] == 'sp.':
+            # pass
         for bgc, tax in motif_tax.items():
-            if genus in tax:
-                # print(bgc, tax)
-                if spec in tax:
-                    #do somethign with sp., also split spec on spaces as strain
-                    #is sometimes also present
-                    print(bgc, tax)
-                    exit()
+            taxl = tax.lower()
+            if genus.lower() in taxl:
+                for spec_i in spec_l:
+                    #Add an 'exact' match: something that matches everything
+                    if spec_i.lower() in taxl:
+                        try:
+                            result_dict[np]['species'].append(\
+                                ' '.join([bgc,tax]))
+                        except KeyError:
+                            result_dict[np]['species'] = [' '.join([bgc,tax])]
+                        break
+                    else:
+                        try:
+                            result_dict[np]['genus'].append(' '.join([bgc,tax]))
+                        except KeyError:
+                            result_dict[np]['genus'] = ['\t'.join([bgc,tax])]
+                        break
+        # if np == 'NPA002175':
+    return result_dict
+
+def write_results(result_dict, np_dict, tax_dict, motif_dict, outfile):
+    '''Write the output to a file
+
+    result_dict: {np: {'genus': ['bgc\ttaxonomy info'],
+        'species: ['bgc\ttaxonomy info'] } } Meaning a match only to the genus
+        or also a match to the species name, strain matching is not included
+        for now
+    np_dict: dict, {NPatlas_id:[genus,species]}
+    tax_dict: dict, {bgc: [taxonomy info]}
+    motif_dict: dict, {bgc: [info_motif_match]} bgcs in the motif of interest
+    '''
+    with open(outfile, 'w') as outf:
+        for np, info in result_dict.items():
+            outf.write('>{}\t{}\n'.format(np, '\t'.join(np_dict[np])))
+            if 'species' in info:
+                outf.write('#Species_matches:\n')
+                for result in info['species']:
+                    outf.write('{}\n'.format(result))
+            if 'genus' in info:
+                outf.write('#Genus_matches:\n')
+                for result in info['genus']:
+                    outf.write('{}\n'.format(result))
 
 if __name__ == "__main__":
     start = time.time()
@@ -139,7 +181,10 @@ if __name__ == "__main__":
     bgc_tax = read_tax(cmd.taxonomy_file)
     # print(bgc_tax)
 
-    link_np_to_bgc(np_ids, bgc_tax, bgcs_in_motif)
+    linked_np_bgc = link_np_to_bgc(np_ids, bgc_tax, bgcs_in_motif)
+    # print(linked_np_bgc.keys())
+
+    write_results(linked_np_bgc, np_ids, bgc_tax, bgcs_in_motif, cmd.out_file)
 
     end = time.time()
     t = end-start
