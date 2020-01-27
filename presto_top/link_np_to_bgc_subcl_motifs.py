@@ -49,7 +49,6 @@ def extract_subcl_motif(infile, motif):
     '''
     right_motif = False
     bgc_dict = {}
-    print(infile)
     with open(infile, 'r') as inf:
         for line in inf:
             line = line.strip()
@@ -66,6 +65,62 @@ def extract_subcl_motif(infile, motif):
                     bgc_dict[bgc] = line #add filter??
     return bgc_dict
 
+def parse_npatlas(infile):
+    '''Parse the NPatlas output to {NPatlas_id:[genus,species]}
+    
+    infile: str, filepath to NPatlas file
+    '''
+    id_dict = {}
+    with open(infile,'r') as inf:
+        #header
+        header = inf.readline().strip().split('\t')
+        genus_ind = [i for i,genus in enumerate(header) if genus == 'GENUS'][0]
+        spec_ind = [i for i,species in enumerate(header) if species ==\
+            'SPECIES'][0]
+
+        for line in inf:
+            line = line.strip().split('\t')
+            np_id = line[0]
+            genus = line[genus_ind]
+            spec = line[spec_ind]
+            id_dict[np_id] = [genus, spec]
+    return id_dict
+
+def read_tax(infile):
+    '''Parse the taxonomy information into {bgc: [taxonomy info]}
+    
+    infile: str, filepath to taxonomy file
+    '''
+    tax_dict = {}
+    with open(infile,'r') as inf:
+        for line in inf:
+            line = line.strip().split('\t')
+            tax_dict[line[0]] = line[1]
+    return tax_dict
+
+def link_np_to_bgc(np_dict, tax_dict, motif_dict):
+    '''Link NPatlas entry to bgc through string matching of taxonomy strings
+
+    np_dict: dict, {NPatlas_id:[genus,species]}
+    tax_dict: dict, {bgc: [taxonomy info]}
+    motif_dict: dict, {bgc: [info_motif_match]} bgcs in the motif of interest
+    '''
+    result_dict = {}
+    #get tax from bgcs in motif
+    motif_tax = {bgc:tax_dict[bgc] for bgc in motif_dict if bgc in tax_dict}
+
+    for np, info in np_dict.items():
+        genus, spec = info[:2]
+        print(np,genus)
+        print(spec)
+        for bgc, tax in motif_tax.items():
+            if genus in tax:
+                # print(bgc, tax)
+                if spec in tax:
+                    #do somethign with sp., also split spec on spaces as strain
+                    #is sometimes also present
+                    print(bgc, tax)
+                    exit()
 
 if __name__ == "__main__":
     start = time.time()
@@ -75,7 +130,16 @@ if __name__ == "__main__":
     bgcs_in_motif = extract_subcl_motif(cmd.motifs_file,
         cmd.subcluster_selection)
 
-    print(bgcs_in_motif, len(bgcs_in_motif))
+    # print(bgcs_in_motif, len(bgcs_in_motif))
+
+    np_ids = parse_npatlas(cmd.in_file)
+
+    # print(np_ids)
+
+    bgc_tax = read_tax(cmd.taxonomy_file)
+    # print(bgc_tax)
+
+    link_np_to_bgc(np_ids, bgc_tax, bgcs_in_motif)
 
     end = time.time()
     t = end-start
