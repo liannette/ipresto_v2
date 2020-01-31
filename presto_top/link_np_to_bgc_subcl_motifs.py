@@ -63,7 +63,7 @@ def extract_subcl_motif(infile, motif):
                 if right_motif:
                     line = line.split('\t')
                     bgc = line.pop(3)
-                    bgc_dict[bgc] = line #add filter??
+                    bgc_dict[bgc] = line #add filter?? for amount of genes ea
     return bgc_dict
 
 def parse_npatlas(infile):
@@ -116,29 +116,32 @@ def link_np_to_bgc(np_dict, tax_dict, motif_dict):
     for np, info in np_dict.items():
         genus, spec = info[:2]
         #there might be spaces ea 'sp. CNQ-418', 'aeruginosa T 359'
-        #for now just match on first string in spec, ie sp. or aeruginosa
         spec_l = spec.split()
-        # if spec_l[0] == 'sp.':
-            # pass
+        spec_name = spec_l.pop(0) #only the species name
         for bgc, tax in motif_tax.items():
             taxl = tax.lower()
             if genus.lower() in taxl:
-                for spec_i in spec_l:
-                    #Add an 'exact' match: something that matches everything
-                    if spec_i.lower() in taxl:
+                if spec_name.lower() in taxl:
+                    if all(spec_i.lower() in taxl for spec_i in spec_l):
+                        #exact match
+                        try:
+                            result_dict[np]['exact'].append(\
+                                ' '.join([bgc,tax]))
+                        except KeyError:
+                            result_dict[np]['exact'] = [' '.join([bgc,tax])]
+                    else:
+                        #genus and species match
                         try:
                             result_dict[np]['species'].append(\
                                 ' '.join([bgc,tax]))
                         except KeyError:
                             result_dict[np]['species'] = [' '.join([bgc,tax])]
-                        break
-                    else:
-                        try:
-                            result_dict[np]['genus'].append(' '.join([bgc,tax]))
-                        except KeyError:
-                            result_dict[np]['genus'] = ['\t'.join([bgc,tax])]
-                        break
-        # if np == 'NPA002175':
+                else:
+                    #genus match but not species
+                    try:
+                        result_dict[np]['genus'].append(' '.join([bgc,tax]))
+                    except KeyError:
+                        result_dict[np]['genus'] = ['\t'.join([bgc,tax])]
     return result_dict
 
 def write_results(result_dict, np_dict, tax_dict, motif_dict, outfile):
@@ -155,6 +158,10 @@ def write_results(result_dict, np_dict, tax_dict, motif_dict, outfile):
     with open(outfile, 'w') as outf:
         for np, info in result_dict.items():
             outf.write('>{}\t{}\n'.format(np, '\t'.join(np_dict[np])))
+            if 'exact' in info:
+                outf.write('#Exact_matches:\n')
+                for result in info['exact']:
+                    outf.write('{}\n'.format(result))
             if 'species' in info:
                 outf.write('#Species_matches:\n')
                 for result in info['species']:
