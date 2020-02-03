@@ -30,7 +30,8 @@ def get_commands():
     to be produced by certain organism to BGCs through sub-cluster analysis \
     with iPRESTO. Needed are NPatlas output (tsv) and PRESTO-TOP output.")
     parser.add_argument("-i", "--in_file", help="Input substructure search \
-        file downloaded from NPatlas output", required=True)
+        file downloaded from NPatlas output. Can be multiple files",
+        required=True, nargs='+')
     parser.add_argument("-o", "--out_file", dest="out_file", 
         required=True, help="Output file")
     parser.add_argument("-m", "--motifs_file", help="File containing\
@@ -66,26 +67,32 @@ def extract_subcl_motif(infile, motif):
                     bgc_dict[bgc] = line #add filter?? for amount of genes ea
     return bgc_dict
 
-def parse_npatlas(infile):
+def parse_npatlas(infiles):
     '''Parse the NPatlas output to {NPatlas_id:[genus,species]}
     
-    infile: str, filepath to NPatlas file
+    infiles: list of str, filepath to NPatlas file
     '''
     id_dict = {}
-    with open(infile,'r') as inf:
-        #header
-        header = inf.readline().strip().split('\t')
-        genus_ind = [i for i,genus in enumerate(header) if genus == 'GENUS'][0]
-        spec_ind = [i for i,species in enumerate(header) if species ==\
-            'SPECIES'][0]
+    for infile in infiles:
+        with open(infile,'r') as inf:
+            #header
+            header = inf.readline().strip().split('\t')
+            genus_ind = [i for i,genus in enumerate(header) if genus ==\
+                'GENUS'][0]
+            spec_ind = [i for i,species in enumerate(header) if species ==\
+                'SPECIES'][0]
+            has_mibig_i = [i for i,mibig in enumerate(header) if mibig ==\
+                'COMPOUND_HAS_MIBIG'][0]
 
-        for line in inf:
-            line = line.strip().split('\t')
-            np_id = line[0]
-            genus = line[genus_ind]
-            spec = line[spec_ind]
-            id_dict[np_id] = [genus, spec]
-    return id_dict
+            for line in inf:
+                line = line.strip().split('\t')
+                np_id = line[0]
+                other_info = line[1:4]
+                genus = line[genus_ind]
+                spec = line[spec_ind]
+                has_mibig = [line[has_mibig_i]]
+                id_dict[np_id] = [genus, spec] + other_info + has_mibig
+        return id_dict
 
 def read_tax(infile):
     '''Parse the taxonomy information into {bgc: [taxonomy info]}
@@ -156,6 +163,9 @@ def write_results(result_dict, np_dict, tax_dict, motif_dict, outfile):
     motif_dict: dict, {bgc: [info_motif_match]} bgcs in the motif of interest
     '''
     with open(outfile, 'w') as outf:
+        outf.write('###Each compound starts with >. Compound header is: '+
+            'NPA ID, Genus, Species, Cluster ID, Node ID, Name(s), '+
+            'Has Mibig. Exact, species or genus matches start start at #.\n')
         for np, info in result_dict.items():
             outf.write('>{}\t{}\n'.format(np, '\t'.join(np_dict[np])))
             if 'exact' in info:
