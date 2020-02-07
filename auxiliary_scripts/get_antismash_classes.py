@@ -57,7 +57,10 @@ def process_gbks(input_folder, output_file, exclude_contig_edge,\
     exclude_contig_edge: bool
     verbose: bool, print additional info to stdout
     '''
-    print("\nRetreiving classes from gbk files.")
+    if description:
+        print("\nRetreiving descriptions from gbk files.")
+    else:
+        print("\nRetreiving classes from gbk files.")
     files = iglob(os.path.join(input_folder, "*.gbk"))
     done = []
     pool = Pool(cores, maxtasksperchild=250)
@@ -94,7 +97,7 @@ def convert_gbk2fasta(file_path, exclude_contig_edge, description, verbose):
         print(" Excluding {}: {}".format(file_path, e))
         return
     if description:
-        return record.description
+        return name,record.description
     for feature in record.features:
         if feature.type == 'cluster':
             if "contig_edge" in feature.qualifiers:
