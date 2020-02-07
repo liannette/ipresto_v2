@@ -30,24 +30,29 @@ def get_commands():
     to be produced by certain organism to BGCs through sub-cluster analysis \
     with iPRESTO. Needed are NPatlas output (tsv) and PRESTO-TOP output.")
     parser.add_argument("-i", "--in_file", help="Input substructure search \
-        file downloaded from NPatlas output. Can be multiple files",
+        file downloaded from NPatlas output. Can be multiple files.",
         required=True, nargs='+')
     parser.add_argument("-o", "--out_file", dest="out_file", 
         required=True, help="Output file")
     parser.add_argument("-m", "--motifs_file", help="File containing\
         sub-cluster motifs, such as matches_per_topic_filtered.txt")
-    parser.add_argument("-s", "--subcluster_selection", help="The sub-cluster\
-        motif (number) that you are interested in that is annotated with the \
-        substructure from the NPatlas search")
+    parser.add_argument("-s", "--subcluster_selection", help="The one or more\
+        sub-cluster motif(s) (numbers) that you are interested in that is \
+        annotated with the substructure from the NPatlas search",nargs='+')
     parser.add_argument("-t", "--taxonomy_file", help="File linking BGCs\
         to organism names, tsv of bgc\torganism")
+    parser.add_argument("--min_genes", default=0, type=int, help="Minimum \
+        amount of genes that need to match the sub-cluster motif, \
+        default = 0")
     return parser.parse_args()
 
-def extract_subcl_motif(infile, motif):
+def extract_subcl_motif(infile, motif, min_genes = 0):
     '''Extract all BGCs with motif_num as {bgc: [info_motif_match]}
 
     infile: str, filepath to motif file
-    motif: str, name of motif
+    motif: list of str, name(s) of motif(s)
+    min_genes: int, minimum amount of genes needed to match the subcluster
+        motif
     '''
     right_motif = False
     bgc_dict = {}
@@ -58,13 +63,15 @@ def extract_subcl_motif(infile, motif):
                 right_motif = False
                 #header of motif matches
                 motif_in_file = line.split(', ')[0].split(' ')[-1]
-                if motif_in_file == motif:
+                if motif_in_file in motif:
                     right_motif = True
             else:
                 if right_motif:
                     line = line.split('\t')
                     bgc = line.pop(3)
-                    bgc_dict[bgc] = line #add filter?? for amount of genes ea
+                    genes = [gene.split(':')[0] for gene in line[2].split(',')]
+                    if len(genes) >= min_genes:
+                        bgc_dict[bgc] = line
     return bgc_dict
 
 def parse_npatlas(infiles):
@@ -187,7 +194,7 @@ if __name__ == "__main__":
     cmd = get_commands()
 
     bgcs_in_motif = extract_subcl_motif(cmd.motifs_file,
-        cmd.subcluster_selection)
+        cmd.subcluster_selection, cmd.min_genes)
 
     # print(bgcs_in_motif, len(bgcs_in_motif))
 
