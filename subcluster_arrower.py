@@ -558,9 +558,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     feature_counter = 1
     records = list(SeqIO.parse(GenBankFile, "genbank"))[:1] #list: not crash the loop
     #todo: figure out how to deal with multiple record genbanks
-    print(records)
     for seq_record in records:
-        print(seq_record)
         add_origin_Y = loci * (2*(h+mY) + H)
 
         # draw a line that coresponds to cluster size
