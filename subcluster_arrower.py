@@ -447,7 +447,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     # This means that we have to read the gbk file once to know num loci, max_width
     if loci == -1:
         try:
-            records = next(SeqIO.parse(GenBankFile, "genbank"))
+            #list: not crash the loop
+            records = list(next(SeqIO.parse(GenBankFile, "genbank"))) 
         except ValueError:
             sys.exit(" Arrower: error while opening GenBank")
         else:
@@ -558,7 +559,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     feature_counter = 1
     records = list(next(SeqIO.parse(GenBankFile, "genbank"))) #list: not crash the loop
     #todo: figure out how to deal with multiple record genbanks
-    for seq_record in records[:1]:
+    for seq_record in records:
         add_origin_Y = loci * (2*(h+mY) + H)
 
         # draw a line that coresponds to cluster size
