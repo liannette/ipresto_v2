@@ -447,7 +447,7 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
     # This means that we have to read the gbk file once to know num loci, max_width
     if loci == -1:
         try:
-            records = list(SeqIO.parse(GenBankFile, "genbank"))
+            records = list(SeqIO.parse(GenBankFile, "genbank"))[:1]
         except ValueError:
             sys.exit(" Arrower: error while opening GenBank")
         else:
