@@ -3,7 +3,8 @@
 Author: Joris Louwen (joris.louwen@wur.nl)
 
 Part of iPRESTO, Bioinformatics group Wageningen University.
-PI: Marnix Medema, Justin van der Hooft
+PIs: Marnix Medema, Justin van der Hooft
+Collaborators: Satria Kautsar
 
 usage:
 python ipresto.py -h
@@ -11,6 +12,82 @@ python ipresto.py -h
 
 from ipresto.presto_stat.presto_stat import *
 from ipresto.presto_top.presto_top import *
+
+
+def get_commands():
+    parser = argparse.ArgumentParser(
+        description=
+        "iPRESTO uses topic modelling and statistical analyses to detect"
+        "sub-clusters of co-evolving genes in Gene Clusters, which can be"
+        "linked to substructures of Natural Products.\nThis script is the main"
+        "functionality of iPRESTO. It can build new sub-cluster models from"
+        "gbks or use previously constructed models to detect sub-clusters in"
+        "unseen gbks.")
+    parser.add_argument(
+        "-i", "--in_folder", dest="in_folder", help="Input directory of gbk \
+        files", required=True)
+    parser.add_argument(
+        "-o", "--out_folder", dest="out_folder", required=True,
+        help="Output directory, this will contain all output data files.")
+    parser.add_argument(
+        "--hmm_path", dest="hmm_path", required=True,
+        help="File containing domain hmms that is hmmpress-processed.")
+    parser.add_argument(
+        "-c", "--cores", dest="cores", default=cpu_count(),
+        help="Set the number of cores the script may use (default: use all \
+        available cores)", type=int)
+    parser.add_argument(
+        "--no_redundancy_filtering", default=False, help="If provided, \
+            redundancy filtering will not be performed", action="store_true")
+    parser.add_argument(
+        "--exclude", dest="exclude", default=["final"], nargs="+",
+        help="If any string in this list occurs in the gbk filename, this \
+        file will not be used for the analysis. (default: [final])")
+    parser.add_argument(
+        "-v", "--verbose", dest="verbose", required=False, action="store_true",
+        default=False, help="Prints more detailed information.")
+    parser.add_argument(
+        "-d", "--domain_overlap_cutoff", dest="domain_overlap_cutoff",
+        default=0.1, help="Specify at which overlap percentage domains are \
+        considered to overlap. Domain with the best score is kept \
+        (default=0.1).")
+    parser.add_argument(  # todo: also include query edge bgcs when querying
+        "-e", "--exclude_contig_edge", dest="exclude_contig_edge",
+        default=False, help="Exclude clusters that lie on a contig edge \
+        (default = false)", action="store_true")
+    parser.add_argument(
+        "-m", "--min_genes", dest="min_genes", default=0, help="Provide the \
+        minimum size of a BGC to be included in the analysis. Default is 0 \
+        genes", type=int)
+    parser.add_argument(
+        "--min_doms", dest="min_doms", default=0, help="The minimum amount of \
+        domains in a BGC to be included in the analysis. Default is 0 domains",
+        type=int)
+    parser.add_argument(
+        "--sim_cutoff", dest="sim_cutoff", default=0.95, help="Cutoff for \
+        cluster similarity in redundancy filtering (default:0.95)", type=float)
+    parser.add_argument(
+        "-p", "--pval_cutoff", dest="pval_cutoff", default = 0.1, type=float,
+        help="P-value cutoff for determining a significant interaction in \
+        module detection (default: 0.1)")
+    parser.add_argument(
+        "--use_fastas", dest="use_fastas", default=None, help="Use already \
+        created fasta files from some folder")
+    parser.add_argument(
+        "--use_domtabs", dest="use_domtabs", default=None, help="Use already \
+        created domtables from some folder")
+    parser.add_argument(
+        "--include_list", dest="include_list", default=None, help="If \
+        provided only the domains in this file will be taken into account in \
+        the analysis. One line should contain one Pfam ID (default: None - \
+        meaning all Pfams from database)")
+    parser.add_argument(
+        "--start_from_clusterfile", default=None, help="A file with BGCs and \
+        domain-combinations to start with (csv and domains in a gene \
+        separated by ';'). This overwrites in_folder (which still has to be \
+        supplied symbolically) and use_domtabs/use_fastas.")
+    return parser.parse_args()
+
 
 if __name__ == "__main__":
     start = time.time()
