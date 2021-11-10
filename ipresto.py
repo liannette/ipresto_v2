@@ -16,33 +16,45 @@ from ipresto.presto_top.presto_top import *
 
 def get_commands():
     parser = argparse.ArgumentParser(
-        description=
-        "iPRESTO uses topic modelling and statistical analyses to detect"
-        "sub-clusters of co-evolving genes in Gene Clusters, which can be"
-        "linked to substructures of Natural Products.\nThis script is the main"
-        "functionality of iPRESTO. It can build new sub-cluster models from"
-        "gbks or use previously constructed models to detect sub-clusters in"
-        "unseen gbks.")
+        description="iPRESTO uses topic modelling and statistical analyses \
+        to detect sub-clusters of co-evolving genes in Gene Clusters, which \
+        can be linked to substructures of Natural Products. This script is \
+        the main functionality of iPRESTO. It can build new sub-cluster \
+        models from gbks or use previously constructed models to detect \
+        sub-clusters in unseen gbks.")
     parser.add_argument(
         "-i", "--in_folder", dest="in_folder", help="Input directory of gbk \
-        files", required=True)
+        files", required=True, metavar="<dir>")
     parser.add_argument(
         "-o", "--out_folder", dest="out_folder", required=True,
-        help="Output directory, this will contain all output data files.")
+        help="Output directory, this will contain all output data files.",
+        metavar="<dir>")
     parser.add_argument(
-        "--hmm_path", dest="hmm_path", required=True,
+        "--hmm_path", dest="hmm_path", required=True, metavar="<file>",
         help="File containing domain hmms that is hmmpress-processed.")
+    parser.add_argument(
+        "--include_list", dest="include_list", default=None, help="If \
+        provided only the domains in this file will be taken into account in \
+        the analysis. One line should contain one Pfam ID (default: None - \
+        meaning all Pfams from database)", metavar="<file>")
+    parser.add_argument(
+        "--start_from_clusterfile", default=None, help="A file with BGCs and \
+        domain-combinations to start with (csv and domains in a gene \
+        separated by ';'). This overwrites in_folder (which still has to be \
+        supplied symbolically) and use_domtabs/use_fastas.",
+        metavar="<file>")
     parser.add_argument(
         "-c", "--cores", dest="cores", default=cpu_count(),
         help="Set the number of cores the script may use (default: use all \
-        available cores)", type=int)
-    parser.add_argument(
+        available cores)", type=int, metavar="<int>")
+    parser.add_argument(  # todo: make invalid if only querying models
         "--no_redundancy_filtering", default=False, help="If provided, \
             redundancy filtering will not be performed", action="store_true")
     parser.add_argument(
         "--exclude", dest="exclude", default=["final"], nargs="+",
         help="If any string in this list occurs in the gbk filename, this \
-        file will not be used for the analysis. (default: [final])")
+        file will not be used for the analysis. (default: [final])",
+        metavar="<str>")
     parser.add_argument(
         "-v", "--verbose", dest="verbose", required=False, action="store_true",
         default=False, help="Prints more detailed information.")
@@ -50,42 +62,33 @@ def get_commands():
         "-d", "--domain_overlap_cutoff", dest="domain_overlap_cutoff",
         default=0.1, help="Specify at which overlap percentage domains are \
         considered to overlap. Domain with the best score is kept \
-        (default=0.1).")
-    parser.add_argument(  # todo: also include query edge bgcs when querying
+        (default=0.1).", metavar="<float>")
+    parser.add_argument(  # todo: again include query edge bgcs when querying
         "-e", "--exclude_contig_edge", dest="exclude_contig_edge",
         default=False, help="Exclude clusters that lie on a contig edge \
         (default = false)", action="store_true")
     parser.add_argument(
         "-m", "--min_genes", dest="min_genes", default=0, help="Provide the \
         minimum size of a BGC to be included in the analysis. Default is 0 \
-        genes", type=int)
+        genes", type=int, metavar="<int>")
     parser.add_argument(
         "--min_doms", dest="min_doms", default=0, help="The minimum amount of \
         domains in a BGC to be included in the analysis. Default is 0 domains",
-        type=int)
+        type=int, metavar="<int>")
     parser.add_argument(
         "--sim_cutoff", dest="sim_cutoff", default=0.95, help="Cutoff for \
-        cluster similarity in redundancy filtering (default:0.95)", type=float)
+        cluster similarity in redundancy filtering (default:0.95)", type=float,
+        metavar="<float>")
     parser.add_argument(
-        "-p", "--pval_cutoff", dest="pval_cutoff", default = 0.1, type=float,
+        "-p", "--pval_cutoff", dest="pval_cutoff", default=0.1, type=float,
         help="P-value cutoff for determining a significant interaction in \
-        module detection (default: 0.1)")
+        module detection (default: 0.1)", metavar="<float>")
     parser.add_argument(
         "--use_fastas", dest="use_fastas", default=None, help="Use already \
-        created fasta files from some folder")
+        created fasta files from some folder", metavar="<dir>")
     parser.add_argument(
         "--use_domtabs", dest="use_domtabs", default=None, help="Use already \
-        created domtables from some folder")
-    parser.add_argument(
-        "--include_list", dest="include_list", default=None, help="If \
-        provided only the domains in this file will be taken into account in \
-        the analysis. One line should contain one Pfam ID (default: None - \
-        meaning all Pfams from database)")
-    parser.add_argument(
-        "--start_from_clusterfile", default=None, help="A file with BGCs and \
-        domain-combinations to start with (csv and domains in a gene \
-        separated by ';'). This overwrites in_folder (which still has to be \
-        supplied symbolically) and use_domtabs/use_fastas.")
+        created domtables from some folder", metavar="<dir>")
     return parser.parse_args()
 
 
@@ -130,8 +133,8 @@ if __name__ == "__main__":
                                         cmd.cores, cmd.out_folder)
             similar_bgcs = read_edges_from_temp(edges_file)
             graph = generate_graph(similar_bgcs, True)
-            uniq_bgcs = [clus for clus in dom_dict.keys() if not clus in
-                                                                 graph.nodes()]
+            uniq_bgcs = [clus for clus in dom_dict.keys() if clus not in
+                         graph.nodes()]
             all_reps = find_all_representatives(doml_dict, graph)
         else:
             # dont perform redundancy filtering and duplicate clus_file to
@@ -152,28 +155,28 @@ if __name__ == "__main__":
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes, cmd.verbose)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
-    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores, \
+    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,
                                       cmd.verbose)
-    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores, \
+    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,
                                         cmd.verbose)
     pvals = keep_lowest_pval(col_pvals, adj_pvals)
-    mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores, \
+    mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,
                                     cmd.verbose)
-    mod_file = '{}_modules.txt'.format( \
+    mod_file = '{}_modules.txt'.format(
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file, mods)
     # linking modules to bgcs and filtering mods that occur less than twice
     bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cmd.cores)
     bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
-    mod_file_f = '{}_filtered_modules.txt'.format( \
+    mod_file_f = '{}_filtered_modules.txt'.format(
         filt_file.split('_filtered_clusterfile.csv')[0])
     write_module_file(mod_file_f, modules, bgcs_with_mods)
-    bgcmodfile = '{}_bgcs_with_mods.txt'.format( \
+    bgcmodfile = '{}_bgcs_with_mods.txt'.format(
         mod_file.split('_modules.txt')[0])
     rank_mods = {pair[0]: i + 1 for i, pair in
-                 enumerate(sorted(modules.items(), \
+                 enumerate(sorted(modules.items(),
                                   key=itemgetter(1)))}
-    write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods, \
+    write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
                            rank_mods)
 
     end = time.time()
