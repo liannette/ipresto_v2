@@ -98,15 +98,24 @@ created with https://github.com/satriaphd/build_subpfam.
 
 ## Dependencies
 
-iPRESTO is build in python3.6. It requires the HMMER suit (http://hmmer.org/),
-as well as some python packages. The required python packages are automatically
-installed when using pip or setup.py.
+iPRESTO is build and tested in python3.6. The required python packages are
+automatically installed when using pip or setup.py. We recommend installing
+iPRESTO in a conda environment like so:
 ```
-#example install with pip
-python3 -m pip --user install iPRESTO
+# create new environment
+conda create -n ipresto python=3.6
 
-#installing without dependencies
-python3 -m pip --user --no-deps install iPRESTO
+# activate new environment
+conda activate ipresto
+
+# install ipresto and dependencies
+python -m pip install iPRESTO
+```
+
+iPRESTO also requires the HMMER suite. If HMMER is not installed on your
+system, it can be installed with conda in your ipresto environment:
+```
+conda install -c bioconda hmmer
 ```
 
 
