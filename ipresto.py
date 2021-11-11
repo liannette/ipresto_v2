@@ -80,6 +80,10 @@ def get_commands():
         cluster similarity in redundancy filtering (default:0.95)", type=float,
         metavar="<float>")
     parser.add_argument(
+        "--remove_genes_below_count", default=3, type=int, help="Remove genes \
+        (domain combinations) when they occur less than <int> times in the \
+        data (default: 3)", metavar="<int>")
+    parser.add_argument(
         "-p", "--pval_cutoff", dest="pval_cutoff", default=0.1, type=float,
         help="P-value cutoff for determining a significant interaction in \
         module detection (default: 0.1)", metavar="<float>")
@@ -152,14 +156,17 @@ if __name__ == "__main__":
               ' performed again')
 
     # detecting modules with statistical approach
+    # todo: keep from crashing when no gbks/sufficient doms are present
     f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
-    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes, cmd.verbose)
+    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes, cmd.verbose,
+                                       cmd.remove_genes_below_count)
     adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
     adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,
                                       cmd.verbose)
     col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,
                                         cmd.verbose)
     pvals = keep_lowest_pval(col_pvals, adj_pvals)
+    # todo: keep from crashing when there are no significant modules
     mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,
                                     cmd.verbose)
     mod_file = '{}_modules.txt'.format(

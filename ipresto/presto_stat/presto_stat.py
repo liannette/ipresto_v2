@@ -744,20 +744,23 @@ def write_filtered_bgcs(uniq_list, rep_dict, dom_dict, filter_file):
     print("Representative bgcs file: {}".format(rep_file))
     return rep_file
 
-def remove_infr_doms(clusdict, m_gens, verbose):
-    '''Returns clusdict with genes replaced  with (-) if they occur < 3
+def remove_infr_doms(clusdict, m_gens, verbose, cutoff=3):
+    '''
+    Returns clusdict with genes replaced  with (-) if they occur < cutoff
+
+    Default cutoff is 3.
 
     clusdict: dict of {cluster:[(domains_of_a_gene)]}
     m_gens: int, minimal distinct genes a cluster must have to be included
     verbose: bool, if True print additional info
-
-    Deletes clusters with 1 unique gene
+    cutoff: int, remove genes (domain cominations) that occur below this cutoff
     '''
-    print('\nRemoving domain combinations that occur less than 3 times')
+    print(f'\nRemoving domain combinations that occur less than {cutoff} '
+          'times')
     domcounter = Counter()
     domcounter.update([v for vals in clusdict.values() for v in vals \
         if not v == ('-',)])
-    deldoms = [key for key in domcounter if domcounter[key] <= 2]
+    deldoms = [key for key in domcounter if domcounter[key] < cutoff]
     print('  {} domain combinations are left, {} are removed'.format(\
         len(domcounter.keys())-len(deldoms),len(deldoms)))
     clus_no_deldoms = {}
@@ -1271,7 +1274,7 @@ def read_mods_bgcs(modsfile):
 
     modsfile: string, filename
     '''
-    with open(mods_file, 'r') as mods_in:
+    with open(modsfile, 'r') as mods_in:
         mods = {}
         mods_in.readline()
         for line in mods_in:
