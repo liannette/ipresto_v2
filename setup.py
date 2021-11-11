@@ -1,22 +1,28 @@
-import setuptools
-import glob
+#!/usr/bin/env python
+import os
+
+from setuptools import setup
+from setuptools import find_packages
+
+here = os.path.abspath(os.path.dirname(__file__))
+
+version = {}
+with open(os.path.join(here, "ipresto", "__version__.py")) as f:
+    exec(f.read(), version)
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
-#add all scripts to path, to be able to run from commandline
-all_scripts = glob.glob('**/*[A-Za-z0-9].py', recursive=True)
-
-setuptools.setup(
+setup(
     name="iPRESTO",
-    version="1.0.3",
+    version=version["__version__"],
     author="Joris Louwen",
     author_email="jorislouwen@hotmail.com",
     description="Detection of biosynthetic sub-clusters",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://git.wageningenur.nl/bioinformatics/iPRESTO",
-    packages=setuptools.find_packages(),
+    packages=find_packages(),
     include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -37,5 +43,5 @@ setuptools.setup(
           'statsmodels',
           'sympy'
       ],
-    scripts=all_scripts
+    scripts=[os.path.join(here, 'ipresto.py')]
 )
