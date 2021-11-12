@@ -29,6 +29,7 @@ setup(
         "License :: OSI Approved :: GNU Affero General Public License v3",
         "Operating System :: OS Independent",
     ],
+    test_suite="tests",
     python_requires='>=3.6',
     install_requires=[
           'biopython',
@@ -43,5 +44,7 @@ setup(
           'statsmodels',
           'sympy'
       ],
-    scripts=[os.path.join(here, 'ipresto.py')]
+    extras_require={"dev": ["pytest",
+                            "pytest-cov"]},
+    scripts=['ipresto.py']
 )
