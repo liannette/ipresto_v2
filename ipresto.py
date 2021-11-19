@@ -98,7 +98,7 @@ def get_commands():
     return parser.parse_args()
 
 
-def bgc_to_dom_combinations(
+def preprocessing_bgcs_to_dom_combinations(
         out_folder: str,
         in_folder: str,
         hmm_path: str,
@@ -139,37 +139,44 @@ def bgc_to_dom_combinations(
     return clus_file
 
 
-if __name__ == "__main__":
-    start = time.time()
-    cmd = get_commands()
+def filtering_cluster_representations(
+        clus_file: str,
+        out_folder: str,
+        no_redundancy_filtering: bool,
+        min_genes: int,
+        cores: int,
+        verbose: bool,
+        sim_cutoff: float,
+        include_list: Union[str, None]):
+    """Wrapper for doing redundancy filtering and domain filtering of clusters
 
-    # converting genes in each bgc to a combination of domains
-    clus_file = bgc_to_dom_combinations(cmd.out_folder,
-                                        cmd.in_folder,
-                                        cmd.hmm_path,
-                                        cmd.start_from_clusterfile,
-                                        cmd.exclude,
-                                        cmd.exclude_contig_edge,
-                                        cmd.min_genes,
-                                        cmd.cores,
-                                        cmd.verbose,
-                                        cmd.use_fastas,
-                                        cmd.use_domtabs,
-                                        cmd.domain_overlap_cutoff)
+    :param clus_file:
+    :param out_folder:
+    :param no_redundancy_filtering:
+    :param min_genes:
+    :param cores:
+    :param verbose:
+    :param sim_cutoff:
+    :param include_list:
+    :return:
 
-    # filtering clusters based on similarity
+    Redundancy filtering is based on jaccard overlap of adjacent domain pairs,
+    and graph based filtering techniques
+    Domain filtering is based on --include_list, e.a. only the biosynthetic
+    domains that are used in the paper (biosynthetic_domains.txt)
+    """
     random.seed(595)
-    dom_dict = read_clusterfile(clus_file, cmd.min_genes,
-                                cmd.verbose)
+    dom_dict = read_clusterfile(clus_file, min_genes,
+                                verbose)
     doml_dict = {bgc: sum(len(g) for g in genes if not g == ('-',))
                  for bgc, genes in dom_dict.items()}
     filt_file = '{}_filtered_clusterfile.csv'.format(
         clus_file.split('_clusterfile.csv')[0])
     if not os.path.isfile(filt_file):
         # do not perform redundancy filtering if it already exist
-        if not cmd.no_redundancy_filtering:
-            edges_file = generate_edges(dom_dict, cmd.sim_cutoff,
-                                        cmd.cores, cmd.out_folder)
+        if not no_redundancy_filtering:
+            edges_file = generate_edges(dom_dict, sim_cutoff,
+                                        cores, out_folder)
             similar_bgcs = read_edges_from_temp(edges_file)
             graph = generate_graph(similar_bgcs, True)
             uniq_bgcs = [clus for clus in dom_dict.keys() if clus not in
@@ -178,17 +185,60 @@ if __name__ == "__main__":
         else:
             # dont perform redundancy filtering and duplicate clus_file to
             # filt file, representative file is created but this is symbolic
+            # todo: remove symbolic (text)
             uniq_bgcs = list(dom_dict.keys())
             all_reps = {}
             print('\nRedundancy filtering is turned off.')
-        if cmd.include_list:
-            include_list = read_txt(cmd.include_list)
+        if include_list:
+            print(f"\nOnly domains from {include_list} are included, other "
+                  "domains filtered out.")
+            include_list = read_txt(include_list)
             dom_dict = filter_out_domains(dom_dict, include_list)
-        all_reps_file = write_filtered_bgcs(uniq_bgcs, all_reps,
-                                            dom_dict, filt_file)
+        write_filtered_bgcs(uniq_bgcs, all_reps,
+                            dom_dict, filt_file)
     else:
-        print('\nFiltered clusterfile existed, redundancy filtering not' +
+        print('\nFiltered clusterfile existed, (redundancy) filtering not' +
               ' performed again')
+    return filt_file
+
+
+if __name__ == "__main__":
+    start = time.time()
+    cmd = get_commands()
+
+    # init messages
+    if not cmd.include_list:
+        print("\n#Warning#: for using models from/replicating the paper, "
+              "biosynthetic_domains.txt should be supplied with"
+              "--include_list")
+
+    # todo: general (numbered) prints going over the steps for clarification
+    # converting genes in each bgc to a combination of domains
+    cluster_file = preprocessing_bgcs_to_dom_combinations(
+        cmd.out_folder,
+        cmd.in_folder,
+        cmd.hmm_path,
+        cmd.start_from_clusterfile,
+        cmd.exclude,
+        cmd.exclude_contig_edge,
+        cmd.min_genes,
+        cmd.cores,
+        cmd.verbose,
+        cmd.use_fastas,
+        cmd.use_domtabs,
+        cmd.domain_overlap_cutoff)
+
+    # filtering clusters based on similarity
+    # filtered_cluster_file =
+    filt_file = filtering_cluster_representations(
+        cluster_file,
+        cmd.out_folder,
+        cmd.no_redundancy_filtering,
+        cmd.min_genes,
+        cmd.cores,
+        cmd.verbose,
+        cmd.sim_cutoff,
+        cmd.include_list)
 
     # detecting modules with statistical approach
     # todo: keep from crashing when no gbks/sufficient doms are present
