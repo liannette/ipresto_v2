@@ -13,6 +13,8 @@ python ipresto.py -h
 from ipresto.presto_stat.presto_stat import *
 from ipresto.presto_top.presto_top import *
 
+from typing import Union, List, Dict, Set
+
 
 def get_commands():
     parser = argparse.ArgumentParser(
@@ -96,31 +98,64 @@ def get_commands():
     return parser.parse_args()
 
 
+def bgc_to_dom_combinations(
+        out_folder: str,
+        in_folder: str,
+        hmm_path: str,
+        start_from_clusterfile: Union[str, None],
+        exclude: List[str],
+        exclude_contig_edge: bool,
+        min_genes: int,
+        cores: int,
+        verbose: bool,
+        use_fastas: Union[str, None],
+        use_domtabs: Union[str, None],
+        domain_overlap_cutoff: float):
+    """
+
+    :return:
+    """
+    if start_from_clusterfile:
+        if not os.path.isdir(out_folder):
+            f_command = 'mkdir {}'.format(out_folder)
+            subprocess.check_call(f_command, shell=True)
+        filepre = os.path.split(start_from_clusterfile)[-1].split(
+            '.csv')[0]
+        clus_file = os.path.join(out_folder, filepre + '_clusterfile.csv')
+        c_command = 'cp {} {}'.format(start_from_clusterfile, clus_file)
+        subprocess.check_call(c_command, shell=True)
+    else:
+        fasta_folder, exist_fastas = process_gbks(
+            in_folder, out_folder, exclude,
+            exclude_contig_edge, min_genes, cores, verbose,
+            use_fastas)
+        dom_folder, exist_doms = hmmscan_wrapper(
+            fasta_folder, hmm_path, verbose, cores, exist_fastas,
+            use_domtabs)
+        clus_file = parse_dom_wrapper(dom_folder, out_folder,
+                                      domain_overlap_cutoff, verbose,
+                                      exist_doms)
+
+    return clus_file
+
+
 if __name__ == "__main__":
     start = time.time()
     cmd = get_commands()
 
     # converting genes in each bgc to a combination of domains
-    if cmd.start_from_clusterfile:
-        if not os.path.isdir(cmd.out_folder):
-            f_command = 'mkdir {}'.format(cmd.out_folder)
-            subprocess.check_call(f_command, shell=True)
-        filepre = os.path.split(cmd.start_from_clusterfile)[-1].split(
-            '.csv')[0]
-        clus_file = os.path.join(cmd.out_folder, filepre + '_clusterfile.csv')
-        c_command = 'cp {} {}'.format(cmd.start_from_clusterfile, clus_file)
-        subprocess.check_call(c_command, shell=True)
-    else:
-        fasta_folder, exist_fastas = process_gbks(
-            cmd.in_folder, cmd.out_folder, cmd.exclude,
-            cmd.exclude_contig_edge, cmd.min_genes, cmd.cores, cmd.verbose,
-            cmd.use_fastas)
-        dom_folder, exist_doms = hmmscan_wrapper(
-            fasta_folder, cmd.hmm_path, cmd.verbose, cmd.cores, exist_fastas,
-            cmd.use_domtabs)
-        clus_file = parse_dom_wrapper(dom_folder, cmd.out_folder,
-                                      cmd.domain_overlap_cutoff, cmd.verbose,
-                                      exist_doms)
+    clus_file = bgc_to_dom_combinations(cmd.out_folder,
+                                        cmd.in_folder,
+                                        cmd.hmm_path,
+                                        cmd.start_from_clusterfile,
+                                        cmd.exclude,
+                                        cmd.exclude_contig_edge,
+                                        cmd.min_genes,
+                                        cmd.cores,
+                                        cmd.verbose,
+                                        cmd.use_fastas,
+                                        cmd.use_domtabs,
+                                        cmd.domain_overlap_cutoff)
 
     # filtering clusters based on similarity
     random.seed(595)
