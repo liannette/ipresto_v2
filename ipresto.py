@@ -110,10 +110,23 @@ def preprocessing_bgcs_to_dom_combinations(
         verbose: bool,
         use_fastas: Union[str, None],
         use_domtabs: Union[str, None],
-        domain_overlap_cutoff: float):
-    """
+        domain_overlap_cutoff: float) -> str:
+    """Processes BGCs (gbks) into list of domain (Pfams) combinations
 
-    :return:
+    :param out_folder:
+    :param in_folder:
+    :param hmm_path:
+    :param start_from_clusterfile:
+    :param exclude:
+    :param exclude_contig_edge:
+    :param min_genes:
+    :param cores:
+    :param verbose:
+    :param use_fastas:
+    :param use_domtabs:
+    :param domain_overlap_cutoff:
+    :return: path to clusterfile - csv of domain combinations:
+        bgc_name,dom1;dom2,dom1,dom3;dom4;dom1
     """
     if start_from_clusterfile:
         if not os.path.isdir(out_folder):
@@ -135,7 +148,6 @@ def preprocessing_bgcs_to_dom_combinations(
         clus_file = parse_dom_wrapper(dom_folder, out_folder,
                                       domain_overlap_cutoff, verbose,
                                       exist_doms)
-
     return clus_file
 
 
@@ -147,7 +159,7 @@ def filtering_cluster_representations(
         cores: int,
         verbose: bool,
         sim_cutoff: float,
-        include_list: Union[str, None]):
+        include_list: Union[str, None]) -> str:
     """Wrapper for doing redundancy filtering and domain filtering of clusters
 
     :param clus_file:
@@ -158,7 +170,8 @@ def filtering_cluster_representations(
     :param verbose:
     :param sim_cutoff:
     :param include_list:
-    :return:
+    :return: path to filtered clusterfile, containing the domain combinations
+        of the filtered bgcs
 
     Redundancy filtering is based on jaccard overlap of adjacent domain pairs,
     and graph based filtering techniques
@@ -208,7 +221,7 @@ def presto_stat_build_subclusters(
         min_genes: int,
         cores: int,
         verbose: bool,
-        pval_cutoff: float):
+        pval_cutoff: float) -> str:
     """Build presto-stat subclusters, and query them to (filtered) train set
 
     :param filt_file:
@@ -217,7 +230,7 @@ def presto_stat_build_subclusters(
     :param cores:
     :param verbose:
     :param pval_cutoff:
-    :return:
+    :return: file containing the filtered final detected modules
     """
     f_clus_dict = read_clusterfile(filt_file, min_genes, verbose)
     f_clus_dict_rem = remove_infr_doms(f_clus_dict, min_genes, verbose,
@@ -247,6 +260,7 @@ def presto_stat_build_subclusters(
                                   key=itemgetter(1)))}
     write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
                            rank_mods)
+    return mod_file_f
 
 
 if __name__ == "__main__":
@@ -259,8 +273,8 @@ if __name__ == "__main__":
               "biosynthetic_domains.txt should be supplied with"
               "--include_list")
 
-    # todo: general (numbered) prints going over the steps for clarification
     # converting genes in each bgc to a combination of domains
+    print("\n1. Preprocessing BGCs into domain combinations")
     cluster_file = preprocessing_bgcs_to_dom_combinations(
         cmd.out_folder,
         cmd.in_folder,
@@ -276,6 +290,7 @@ if __name__ == "__main__":
         cmd.domain_overlap_cutoff)
 
     # filtering clusters based on similarity
+    print("\n2. Filtering the clusters (represented as domain combinations)")
     filtered_cluster_file = filtering_cluster_representations(
         cluster_file,
         cmd.out_folder,
@@ -287,8 +302,9 @@ if __name__ == "__main__":
         cmd.include_list)
 
     # detecting modules with statistical approach
+    print("\n3. PRESTO-STAT - statistical subcluster detection")
     # todo: keep from crashing when no gbks/sufficient doms are present
-    presto_stat_build_subclusters(
+    stat_subclusters_file = presto_stat_build_subclusters(
         filtered_cluster_file,
         cmd.remove_genes_below_count,
         cmd.min_genes,
