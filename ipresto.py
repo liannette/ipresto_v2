@@ -202,6 +202,53 @@ def filtering_cluster_representations(
     return filt_file
 
 
+def presto_stat_build_subclusters(
+        filt_file: str,
+        remove_genes_below_count: int,
+        min_genes: int,
+        cores: int,
+        verbose: bool,
+        pval_cutoff: float):
+    """Build presto-stat subclusters, and query them to (filtered) train set
+
+    :param filt_file:
+    :param remove_genes_below_count:
+    :param min_genes:
+    :param cores:
+    :param verbose:
+    :param pval_cutoff:
+    :return:
+    """
+    f_clus_dict = read_clusterfile(filt_file, min_genes, verbose)
+    f_clus_dict_rem = remove_infr_doms(f_clus_dict, min_genes, verbose,
+                                       remove_genes_below_count)
+    adj_counts, c_counts = count_interactions(f_clus_dict_rem, verbose)
+    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cores,
+                                      verbose)
+    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cores,
+                                        verbose)
+    pvals = keep_lowest_pval(col_pvals, adj_pvals)
+    # todo: keep from crashing when there are no significant modules
+    mods = generate_modules_wrapper(pvals, pval_cutoff, cores,
+                                    verbose)
+    mod_file = '{}_modules.txt'.format(
+        filt_file.split('_filtered_clusterfile.csv')[0])
+    write_module_file(mod_file, mods)
+    # linking modules to bgcs and filtering mods that occur less than twice
+    bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cores)
+    bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
+    mod_file_f = '{}_filtered_modules.txt'.format(
+        filt_file.split('_filtered_clusterfile.csv')[0])
+    write_module_file(mod_file_f, modules, bgcs_with_mods)
+    bgcmodfile = '{}_bgcs_with_mods.txt'.format(
+        mod_file.split('_modules.txt')[0])
+    rank_mods = {pair[0]: i + 1 for i, pair in
+                 enumerate(sorted(modules.items(),
+                                  key=itemgetter(1)))}
+    write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
+                           rank_mods)
+
+
 if __name__ == "__main__":
     start = time.time()
     cmd = get_commands()
@@ -229,8 +276,7 @@ if __name__ == "__main__":
         cmd.domain_overlap_cutoff)
 
     # filtering clusters based on similarity
-    # filtered_cluster_file =
-    filt_file = filtering_cluster_representations(
+    filtered_cluster_file = filtering_cluster_representations(
         cluster_file,
         cmd.out_folder,
         cmd.no_redundancy_filtering,
@@ -242,34 +288,14 @@ if __name__ == "__main__":
 
     # detecting modules with statistical approach
     # todo: keep from crashing when no gbks/sufficient doms are present
-    f_clus_dict = read_clusterfile(filt_file, cmd.min_genes, cmd.verbose)
-    f_clus_dict_rem = remove_infr_doms(f_clus_dict, cmd.min_genes, cmd.verbose,
-                                       cmd.remove_genes_below_count)
-    adj_counts, c_counts = count_interactions(f_clus_dict_rem, cmd.verbose)
-    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cmd.cores,
-                                      cmd.verbose)
-    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cmd.cores,
-                                        cmd.verbose)
-    pvals = keep_lowest_pval(col_pvals, adj_pvals)
-    # todo: keep from crashing when there are no significant modules
-    mods = generate_modules_wrapper(pvals, cmd.pval_cutoff, cmd.cores,
-                                    cmd.verbose)
-    mod_file = '{}_modules.txt'.format(
-        filt_file.split('_filtered_clusterfile.csv')[0])
-    write_module_file(mod_file, mods)
-    # linking modules to bgcs and filtering mods that occur less than twice
-    bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cmd.cores)
-    bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
-    mod_file_f = '{}_filtered_modules.txt'.format(
-        filt_file.split('_filtered_clusterfile.csv')[0])
-    write_module_file(mod_file_f, modules, bgcs_with_mods)
-    bgcmodfile = '{}_bgcs_with_mods.txt'.format(
-        mod_file.split('_modules.txt')[0])
-    rank_mods = {pair[0]: i + 1 for i, pair in
-                 enumerate(sorted(modules.items(),
-                                  key=itemgetter(1)))}
-    write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
-                           rank_mods)
+    presto_stat_build_subclusters(
+        filtered_cluster_file,
+        cmd.remove_genes_below_count,
+        cmd.min_genes,
+        cmd.cores,
+        cmd.verbose,
+        cmd.pval_cutoff
+    )
 
     end = time.time()
     t = end - start
