@@ -259,7 +259,8 @@ def presto_stat_build_subclusters(
             filt_file.split('_filtered_clusterfile.csv')[0])
         write_module_file(mod_file, mods)
         # linking modules to bgcs and filtering mods that occur less than twice
-        bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cores)
+        bgcs_with_mods_ori = q_stat.link_all_mods2bgcs(f_clus_dict_rem, mods,
+                                                       cores)
         bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
         mod_file_f = '{}_filtered_modules.txt'.format(
             filt_file.split('_filtered_clusterfile.csv')[0])

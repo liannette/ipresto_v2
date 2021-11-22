@@ -76,7 +76,7 @@ def read_clusterfile(infile):
             clus = line[0]
             genes = line[1:]
             g_doms = [tuple(gene.split(';')) for gene in genes]
-            if not clus in clus_dict.keys():
+            if clus not in clus_dict.keys():
                 clus_dict[clus] = g_doms
             else:
                 print("Clusternames not unique, {} read twice".format(clus))
@@ -97,7 +97,7 @@ def read_mods(modfile):
         inf.readline()  # header
         for line in inf:
             linesplit = line.strip().split('\t')
-            mod = tuple([tuple(gene.split(';')) for gene in \
+            mod = tuple([tuple(gene.split(';')) for gene in
                          linesplit[5].split(',')])
             modules[mod] = line.strip()
         return modules
