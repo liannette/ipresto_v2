@@ -23,7 +23,7 @@ Note:
 # Makes sure the script can be used with Python 2 as well as Python 3.
 from __future__ import print_function, division
 from sys import version_info
-if version_info[0]==2:
+if version_info[0] == 2:
     range = xrange
 
 import os
