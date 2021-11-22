@@ -11,6 +11,7 @@ python ipresto.py -h
 """
 
 from ipresto.presto_stat.presto_stat import *
+from ipresto.presto_stat import query_statistical_modules as q_stat
 from ipresto.presto_top.presto_top import *
 
 from typing import Union, List, Dict, Set
@@ -34,6 +35,11 @@ def get_commands():
     parser.add_argument(
         "--hmm_path", dest="hmm_path", required=True, metavar="<file>",
         help="File containing domain hmms that is hmmpress-processed.")
+    parser.add_argument(
+        "--stat_subclusters", default=None, metavar="<file>", help="Txt file \
+        containing previously inferred subclusters to detect in the input - \
+        if not provided, PRESTO-STAT will run to detect new subclusters in \
+        the input (default: None)")
     parser.add_argument(
         "--include_list", dest="include_list", default=None, help="If \
         provided only the domains in this file will be taken into account in \
@@ -217,6 +223,7 @@ def filtering_cluster_representations(
 
 def presto_stat_build_subclusters(
         filt_file: str,
+        stat_subclusters_file: str,
         remove_genes_below_count: int,
         min_genes: int,
         cores: int,
@@ -225,6 +232,7 @@ def presto_stat_build_subclusters(
     """Build presto-stat subclusters, and query them to (filtered) train set
 
     :param filt_file:
+    :param stat_subclusters_file:
     :param remove_genes_below_count:
     :param min_genes:
     :param cores:
@@ -233,34 +241,51 @@ def presto_stat_build_subclusters(
     :return: file containing the filtered final detected modules
     """
     f_clus_dict = read_clusterfile(filt_file, min_genes, verbose)
-    f_clus_dict_rem = remove_infr_doms(f_clus_dict, min_genes, verbose,
-                                       remove_genes_below_count)
-    adj_counts, c_counts = count_interactions(f_clus_dict_rem, verbose)
-    adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cores,
-                                      verbose)
-    col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cores,
+    if not stat_subclusters_file:
+        # run presto-stat to infer sub-clusters from input clusters
+        print("\nBuilding PRESTO-STAT sub-clusters from input")
+        f_clus_dict_rem = remove_infr_doms(f_clus_dict, min_genes, verbose,
+                                           remove_genes_below_count)
+        adj_counts, c_counts = count_interactions(f_clus_dict_rem, verbose)
+        adj_pvals = calc_adj_pval_wrapper(adj_counts, f_clus_dict_rem, cores,
+                                          verbose)
+        col_pvals = calc_coloc_pval_wrapper(c_counts, f_clus_dict_rem, cores,
+                                            verbose)
+        pvals = keep_lowest_pval(col_pvals, adj_pvals)
+        # todo: keep from crashing when there are no significant modules
+        mods = generate_modules_wrapper(pvals, pval_cutoff, cores,
                                         verbose)
-    pvals = keep_lowest_pval(col_pvals, adj_pvals)
-    # todo: keep from crashing when there are no significant modules
-    mods = generate_modules_wrapper(pvals, pval_cutoff, cores,
-                                    verbose)
-    mod_file = '{}_modules.txt'.format(
+        mod_file = '{}_modules.txt'.format(
+            filt_file.split('_filtered_clusterfile.csv')[0])
+        write_module_file(mod_file, mods)
+        # linking modules to bgcs and filtering mods that occur less than twice
+        bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cores)
+        bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
+        mod_file_f = '{}_filtered_modules.txt'.format(
+            filt_file.split('_filtered_clusterfile.csv')[0])
+        write_module_file(mod_file_f, modules, bgcs_with_mods)
+
+        # todo: assess if this output is necessary
+        bgcmodfile = '{}_bgcs_with_mods.txt'.format(
+            filt_file.split('_filtered_clusterfile.csv')[0])
+        rank_mods = {pair[0]: i + 1 for i, pair in
+                     enumerate(sorted(modules.items(),
+                                      key=itemgetter(1)))}
+        write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
+                               rank_mods)
+    else:
+        # read previously inferred subclusters from file
+        print("\nReading PRESTO-STAT subclusters from file:",
+              stat_subclusters_file)
+        modules = q_stat.read_mods(stat_subclusters_file)
+        bgcs_with_mods = q_stat.link_all_mods2bgcs(f_clus_dict, list(modules),
+                                                   cores)
+
+    out_file = '{}_presto_stat_subclusters.txt'.format(
         filt_file.split('_filtered_clusterfile.csv')[0])
-    write_module_file(mod_file, mods)
-    # linking modules to bgcs and filtering mods that occur less than twice
-    bgcs_with_mods_ori = link_all_mods2bgcs(f_clus_dict_rem, mods, cores)
-    bgcs_with_mods, modules = remove_infr_mods(bgcs_with_mods_ori, mods)
-    mod_file_f = '{}_filtered_modules.txt'.format(
-        filt_file.split('_filtered_clusterfile.csv')[0])
-    write_module_file(mod_file_f, modules, bgcs_with_mods)
-    bgcmodfile = '{}_bgcs_with_mods.txt'.format(
-        mod_file.split('_modules.txt')[0])
-    rank_mods = {pair[0]: i + 1 for i, pair in
-                 enumerate(sorted(modules.items(),
-                                  key=itemgetter(1)))}
-    write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
-                           rank_mods)
-    return mod_file_f
+    print("\nWriting clusters with detected subclusters to", out_file)
+    q_stat.write_bgc_mod_fasta(bgcs_with_mods, modules, out_file)
+    return out_file
 
 
 if __name__ == "__main__":
@@ -304,8 +329,9 @@ if __name__ == "__main__":
     # detecting modules with statistical approach
     print("\n3. PRESTO-STAT - statistical subcluster detection")
     # todo: keep from crashing when no gbks/sufficient doms are present
-    stat_subclusters_file = presto_stat_build_subclusters(
+    bgcs_w_stat_subclusters_file = presto_stat_build_subclusters(
         filtered_cluster_file,
+        cmd.stat_subclusters,
         cmd.remove_genes_below_count,
         cmd.min_genes,
         cmd.cores,

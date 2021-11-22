@@ -24,13 +24,62 @@ def test_ipresto(tmp_path):
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
           f"--include_list {include_list} --remove_genes_below_count 0 -p 1.0"
     print(cmd)
-    e = subprocess.check_call(cmd, shell=True)
-    assert e == 0, "Basic iPRESTO run failed on test data"
+    try:
+        subprocess.check_call(cmd, shell=True)
+    except subprocess.CalledProcessError as e:
+        assert e.output == 0, "Basic iPRESTO run failed on test data"
     # todo: add test for using include_list, remove_genes_below_count, etc
 
 
+def test_ipresto_query_presto_stat(tmp_path):
+    """Test main ipresto.py script from command line with test subclusters"""
+    tests_dir = os.path.split(os.path.realpath(__file__))[0]
+    ipresto_path = os.path.join(tests_dir, "../ipresto.py")
+    test_files = os.path.join(tests_dir, "test_files")
+    test_out = os.path.join(tmp_path, "out")
+    hmm_path = os.path.join(
+        tests_dir, "../../../subcluster_data/domains/Pfam_100subs_tc.hmm")
+    include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
+    test_subcl = os.path.join(test_files, "test_subclusters",
+                              "test_stat_subclusters.txt")
+    cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
+          f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
+          f"--include_list {include_list} --stat_subclusters {test_subcl}"
+    print(cmd)
+    try:
+        subprocess.check_call(cmd, shell=True)
+    except subprocess.CalledProcessError as e:
+        assert e.output == 0,\
+            "iPRESTO run failed on test data with test subclusters"
+
+
+def test_ipresto_query_presto_stat_no_clans(tmp_path):
+    """
+    Test main ipresto.py script from command line /w test subclusters no clans
+    """
+    tests_dir = os.path.split(os.path.realpath(__file__))[0]
+    ipresto_path = os.path.join(tests_dir, "../ipresto.py")
+    test_files = os.path.join(tests_dir, "test_files")
+    test_out = os.path.join(tmp_path, "out")
+    hmm_path = os.path.join(
+        tests_dir, "../../../subcluster_data/domains/Pfam_100subs_tc.hmm")
+    include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
+    test_subcl = os.path.join(test_files, "test_subclusters",
+                              "test_stat_subclusters_no_clans.txt")
+    cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
+          f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
+          f"--include_list {include_list} --stat_subclusters {test_subcl}"
+    print(cmd)
+    try:
+        subprocess.check_call(cmd, shell=True)
+    except subprocess.CalledProcessError as e:
+        assert e.output == 0,\
+            "iPRESTO run failed on test data with test subclusters " \
+            "no clans"
+
+
 def test_ipresto_red_filtering(tmp_path):
-    """Tests main ipresto.py script from command line"""
+    """Tests main ipresto.py script from command line with redundancy filter"""
     tests_dir = os.path.dirname(os.path.realpath(__file__))
     ipresto_path = os.path.join(tests_dir, "../ipresto.py")
     test_files = os.path.join(tests_dir, "test_files")
@@ -42,8 +91,12 @@ def test_ipresto_red_filtering(tmp_path):
           f"--hmm_path {hmm_path} -c 4 " \
           f"--include_list {include_list} --remove_genes_below_count 0 -p 1.0"
     print(cmd)
-    e = subprocess.check_call(cmd, shell=True)
-    assert e == 0, "Basic iPRESTO run failed on test data"
+    try:
+        subprocess.check_call(cmd, shell=True)
+    except subprocess.CalledProcessError as e:
+        assert e.output == 0,\
+            "iPRESTO run failed on test data trying to use redundancy" \
+            " filtering"
 
 
 if __name__ == '__main__':
@@ -51,4 +104,6 @@ if __name__ == '__main__':
     test_out_dir = os.path.dirname(os.path.realpath(__file__))
     test_ipresto_help(test_out_dir)
     test_ipresto(test_out_dir)
+    test_ipresto_query_presto_stat(test_out_dir)
+    test_ipresto_query_presto_stat_no_clans(test_out_dir)
     test_ipresto_red_filtering(test_out_dir)
