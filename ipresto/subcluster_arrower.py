@@ -90,6 +90,9 @@ def get_commands():
         help="If provided only the domains in this file will be taken into \
         account in the plotting of subclusters. One line should contain one \
         Pfam ID (default: False - meaning all Pfams present in domhits file)")
+    parser.add_argument(
+        "-v", "--verbose", dest="verbose", required=False, action="store_true",
+        default=False, help="Prints more detailed information.")
     return parser.parse_args()
 
 # read various color data
@@ -449,7 +452,8 @@ def SVG(write_html, outputfile, GenBankFile, BGCname, identifiers, \
         try:
             records = list(SeqIO.parse(GenBankFile, "genbank"))[:1]
         except ValueError:
-            sys.exit(" Arrower: error while opening GenBank")
+            print(" Arrower: error while opening gbk", GenBankFile)
+            return
         else:
             loci = len(records)
             max_width = 0
@@ -862,6 +866,7 @@ def read_txt(in_file):
         lines = [line.strip() for line in inf]
     return lines
 
+
 if __name__ == '__main__':
     cmd = get_commands()
 
@@ -870,12 +875,12 @@ if __name__ == '__main__':
     else:
         modules_lda = cmd.modules_lda
     if cmd.modules_stat:
-        modules_stat = read_modules(cmd.modules_stat,lda_or_stat='stat')
+        modules_stat = read_modules(cmd.modules_stat, lda_or_stat='stat')
     else:
         modules_stat = cmd.modules_stat
 
     with open(cmd.outfile,'w') as outf:
-        pass #clear outfile
+        pass  # clear outfile
 
     if cmd.one:
         files = [cmd.filenames]
@@ -884,7 +889,7 @@ if __name__ == '__main__':
             files = [line.strip() for line in inf]
 
     if cmd.include_list:
-            include_doms = read_txt(cmd.include_list)
+        include_doms = read_txt(cmd.include_list)
     else:
         include_doms = False
 
@@ -900,9 +905,10 @@ if __name__ == '__main__':
     dom_hits,new_colour_doms = read_dom_hits(cmd.dom_hits_file,domain_colours,\
         pfam_info)
 
-    print('\nVisualising sub-clusters for:')
+    print('\nVisualising sub-clusters')
     for filename in files:
-        print(filename)
+        if cmd.verbose:
+            print(filename)
         bgc = os.path.split(filename)[1].split('.gbk')[0]
         SVG(True, cmd.outfile,filename,bgc,dom_hits,gene_colours,domain_colours,{},\
             pfam_info,-1,None,cmd.domains_colour_file,new_colour_doms,\
@@ -923,7 +929,8 @@ if __name__ == '__main__':
         if modules_stat:
             mods = modules_stat[bgc]
             if not mods:
-                print('\tNo statistical modules present')
+                if cmd.verbose:
+                    print('\tNo statistical modules present')
                 continue
             if len(mods[0]) == 7:
                 #sort on family

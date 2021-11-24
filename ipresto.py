@@ -13,8 +13,10 @@ import argparse
 from ipresto.presto_stat.presto_stat import *
 from ipresto.presto_stat import query_statistical_modules as q_stat
 from ipresto.presto_top.presto_top import *
-
-from typing import Union, List, Dict, Set
+from multiprocessing import cpu_count
+from sys import argv
+import logging
+from typing import Union, List
 
 
 def get_commands():
@@ -65,6 +67,11 @@ def get_commands():
     parser.add_argument(  # todo: make invalid if only querying models
         "--no_redundancy_filtering", default=False, help="If provided, \
             redundancy filtering will not be performed", action="store_true")
+    parser.add_argument(
+        "--visualise_subclusters", default=False, help="If provided, \
+        subclusters will be visualised for all gbk inputs, otherwise just the \
+        1000 first bgcs of the data will be visualised to consider time/space",
+        action="store_true")
     parser.add_argument(
         "--exclude", dest="exclude", default=["final"], nargs="+",
         help="If any string in this list occurs in the gbk filename, this \
@@ -467,6 +474,49 @@ if __name__ == "__main__":
 
     if not cmd.top_motifs_model:
         plot_convergence(log_out, cmd.iterations)
+
+    # visualise subclusters in the output for first 1000 bgcs, otherwise this
+    # be very lengthy, surpress with --visualise_subclusters
+    print("\n5. Visualising sub-clusters")
+    if not cmd.visualise_subclusters:
+        print(
+            "  use --visualise_subclusters to vis more than first 1000 gbks")
+    ipresto_dir = os.path.dirname(os.path.realpath(__file__))
+    subcl_arrower = os.path.join(ipresto_dir, "ipresto",
+                                 "subcluster_arrower.py")
+    # write names of all input gbk to file
+    # todo: return from step 1.
+    in_gbks = glob(os.path.join(cmd.in_folder, "*.gbk"))
+    gbks_path_file = os.path.join(cmd.out_folder, "input_gbks.txt")
+    with open(gbks_path_file, "w") as gbk_out:
+        if not cmd.visualise_subclusters:
+            for gbk in in_gbks:
+                gbk_out.write(f"{gbk}\n")
+        else:
+            for gbk in in_gbks[:1000]:
+                gbk_out.write(f"{gbk}\n")
+    dom_col_file = os.path.join(ipresto_dir, "files",
+                                "domains_colour_file.tsv")
+    dom_hits_file = '{}_dom_hits.txt'.format(
+            filtered_cluster_file.split('_filtered_clusterfile.csv')[0])
+    vis_out_file = '{}_ipresto_output_visualisation.html'.format(
+            filtered_cluster_file.split('_filtered_clusterfile.csv')[0])
+    bgc_topics_filtered = os.path.join(presto_top_dir,
+                                       "bgc_topics_filtered.txt")
+
+    vis_cmd = f"python {subcl_arrower} -f {gbks_path_file} " \
+              f"-c {dom_col_file} -d {dom_hits_file} " \
+              f"-o {vis_out_file} -s {bgcs_w_stat_subclusters_file} " \
+              f"-l {bgc_topics_filtered}"
+    if cmd.include_list:
+        vis_cmd += f" --include_list {cmd.include_list}"
+
+    try:
+        subprocess.check_call(vis_cmd, shell=True)
+    except subprocess.CalledProcessError as error:
+        print("\nVisualising subclusters failed, make sure dom_hits.txt is "
+              "present in output as well as the gbks in the input folder. "
+              "Alternatively: run ipresto/subcluster_arrower.py yourself")
 
     end = time.time()
     t = end - start
