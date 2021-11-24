@@ -9,7 +9,7 @@ Collaborators: Satria Kautsar
 usage:
 python ipresto.py -h
 """
-
+import argparse
 from ipresto.presto_stat.presto_stat import *
 from ipresto.presto_stat import query_statistical_modules as q_stat
 from ipresto.presto_top.presto_top import *
@@ -40,6 +40,13 @@ def get_commands():
         containing previously inferred subclusters to detect in the input - \
         if not provided, PRESTO-STAT will run to detect new subclusters in \
         the input (default: None)")
+    parser.add_argument(
+        '--top_motifs_model', help='Use PRESTO-TOP with existing \
+        sub-cluster motifs in an LDA model. Supply here the path to the \
+        model. In that location there should be also model.dict, \
+        model.expElogbeta.npy, model.id2word, model.state, \
+        model.state.sstats.npy', required=False, default=False,
+        metavar="<file>")
     parser.add_argument(
         "--include_list", dest="include_list", default=None, help="If \
         provided only the domains in this file will be taken into account in \
@@ -101,6 +108,55 @@ def get_commands():
     parser.add_argument(
         "--use_domtabs", dest="use_domtabs", default=None, help="Use already \
         created domtables from some folder", metavar="<dir>")
+    parser.add_argument(
+        "-t", "--topics", dest="topics", help="Amount of topics to use for \
+        the LDA model in PRESTO-TOP (default: 1000)", default=1000, type=int,
+        metavar="<int>")
+    parser.add_argument(
+        "-f", "--min_feat_score", dest="min_feat_score", help="Only include \
+        features until their scores add up to this number (default: 0.95) Can \
+        be combined with feat_num, where feat_num features are selected or \
+        features that add up to min_feat_score", type=float, default=0.95,
+        metavar="<float>")
+    parser.add_argument(
+        "-n", "--feat_num", dest="feat_num", help="Include the first feat_num \
+        features for each topic (default: 75)", type=int, default=75,
+        metavar="<int>")
+    parser.add_argument(
+        "-a", "--amplify", dest="amplify", help="Amplify the dataset in order \
+        to achieve a better LDA model. Each BGC will be present amplify times \
+        in the dataset. After calculating the LDA model the dataset will be \
+        scaled back to normal.", type=int, default=None, metavar="<int>")
+    parser.add_argument(
+        "--visualise", help="Make a visualation of the LDA model with \
+        pyLDAvis (html file). If number of topics is too big this might fail. \
+        No visualisation will then be made", default=False,
+        action="store_true")
+    parser.add_argument(
+        "--classes", help="A file containing classes of the BGCs used in the \
+        analysis. First column should contain matching BGC names. Consecutive \
+        columns should contain classes.", default=False, metavar="<file>")
+    parser.add_argument(
+        "--plot", help="If provided: make plots about several aspects of the \
+        presto-top output", default=False, action="store_true")
+    parser.add_argument(
+        "--known_subclusters", help="A tab delimited file with known \
+        subclusters. Should contain subclusters in the last column and BGC \
+        identifiers in the first column. Subclusters are comma separated \
+        genes represented as domains. Multiple domains in a gene are \
+        separated by semi-colon.", metavar="<file>")
+    parser.add_argument(
+        "-I", "--iterations", help="Amount of iterations for training the \
+        LDA model (default: 1000)", default=1000, type=int, metavar="<int>")
+    parser.add_argument(
+        "-C", "--chunksize", default=2000, type=int, help='The chunksize \
+        used to train the model (default: 2000)', metavar="<int>")
+    parser.add_argument(
+        "-u", "--update", help="If provided and a model already exists, the \
+        existing model will be updated with original parameters, new \
+        parameters cannot be passed in the LdaMulticore version.",
+        default=False, action="store_true")
+
     return parser.parse_args()
 
 
@@ -337,8 +393,80 @@ if __name__ == "__main__":
         cmd.min_genes,
         cmd.cores,
         cmd.verbose,
-        cmd.pval_cutoff
-    )
+        cmd.pval_cutoff)
+
+    # detecting sub-cluster motifs with topic modelling
+    print("\n4. PRESTO-TOP - sub-cluster motif detection with topic modelling")
+    presto_top_dir = os.path.join(cmd.out_folder, "presto_top")
+    if not os.path.isdir(presto_top_dir):
+        os.mkdir(presto_top_dir)
+
+    if not cmd.top_motifs_model:
+        print(
+            'Parameters: {} topics, {} amplification, '.format(cmd.topics,
+                                                               cmd.amplify) +
+            '{} iterations of chunksize {}'.format(cmd.iterations,
+                                                   cmd.chunksize))
+    else:
+        print('Parameters: running on existing model at {}'.format(
+            cmd.top_motifs_model))
+
+    # writing log information to log.txt
+    log_out = os.path.join(presto_top_dir, 'log.txt')
+    with open(log_out, 'a') as outf:
+        for arg in argv:
+            outf.write(arg + '\n')
+    logging.basicConfig(filename=log_out,
+                        format="%(asctime)s:%(levelname)s:%(message)s",
+                        level=logging.INFO)
+
+    bgcs = read2dict(filtered_cluster_file)
+
+    if cmd.classes:
+        bgc_classes_dict = read2dict(cmd.classes, sep='\t', header=True)
+    else:
+        bgc_classes_dict = {bgc: 'None' for bgc in bgcs}
+
+    if not cmd.top_motifs_model:
+        bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False,
+                                    cmd.remove_genes_below_count)
+
+    if cmd.amplify:
+        bgc_items = []
+        for bgc in bgcs.items():
+            bgc_items += [bgc] * cmd.amplify
+        bgclist, dom_list = zip(*bgc_items)
+    else:
+        bgclist, dom_list = zip(*bgcs.items())
+
+    if cmd.known_subclusters:
+        known_subclusters = defaultdict(list)
+        with open(cmd.known_subclusters, 'r') as inf:
+            for line in inf:
+                line = line.strip().split('\t')
+                known_subclusters[line[0]].append(line[1:])
+    else:
+        known_subclusters = False
+
+    if not cmd.top_motifs_model:
+        lda, lda_dict, bow_corpus = run_lda(
+            dom_list, no_below=cmd.remove_genes_below_count, no_above=0.5,
+            num_topics=cmd.topics, cores=cmd.cores, outfolder=presto_top_dir,
+            iters=cmd.iterations, chnksize=cmd.chunksize,
+            update_model=cmd.update, ldavis=cmd.visualise)
+    else:
+        with open(log_out, 'w') as outf:
+            outf.write('\nUsing model from {}'.format(cmd.top_motifs_model))
+        lda, lda_dict, bow_corpus = run_lda_from_existing(
+            cmd.top_motifs_model, dom_list, no_below=1, no_above=0.5)
+
+    process_lda(lda, lda_dict, bow_corpus, cmd.feat_num, bgcs,
+                cmd.min_feat_score, bgclist, presto_top_dir, bgc_classes_dict,
+                num_topics=cmd.topics, amplif=cmd.amplify, plot=cmd.plot,
+                known_subcl=known_subclusters)
+
+    if not cmd.top_motifs_model:
+        plot_convergence(log_out, cmd.iterations)
 
     end = time.time()
     t = end - start

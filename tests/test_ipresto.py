@@ -22,7 +22,8 @@ def test_ipresto(tmp_path):
     include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
-          f"--include_list {include_list} --remove_genes_below_count 0 -p 1.0"
+          f"--include_list {include_list} --remove_genes_below_count 0 " \
+          f"-p 1.0 -t 3 -I 30"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
@@ -42,9 +43,11 @@ def test_ipresto_query_presto_stat(tmp_path):
     include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
     test_subcl = os.path.join(test_files, "test_subclusters",
                               "test_stat_subclusters.txt")
+    test_motif_model = os.path.join(test_out, "presto_top", "lda_model")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
-          f"--include_list {include_list} --stat_subclusters {test_subcl}"
+          f"--include_list {include_list} --stat_subclusters {test_subcl} " \
+          f"-t 3 -I 30 --top_motifs_model {test_motif_model}"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
@@ -66,9 +69,11 @@ def test_ipresto_query_presto_stat_no_clans(tmp_path):
     include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
     test_subcl = os.path.join(test_files, "test_subclusters",
                               "test_stat_subclusters_no_clans.txt")
+    test_motif_model = os.path.join(test_out, "presto_top", "lda_model")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
-          f"--include_list {include_list} --stat_subclusters {test_subcl}"
+          f"--include_list {include_list} --stat_subclusters {test_subcl} " \
+          f"-t 3 -I 30 --top_motifs_model {test_motif_model}"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
@@ -89,7 +94,8 @@ def test_ipresto_red_filtering(tmp_path):
     include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 " \
-          f"--include_list {include_list} --remove_genes_below_count 0 -p 1.0"
+          f"--include_list {include_list} --remove_genes_below_count 0 " \
+          f"-p 1.0 -t 3 -I 30"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
