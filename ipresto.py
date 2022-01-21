@@ -489,7 +489,7 @@ if __name__ == "__main__":
     in_gbks = glob(os.path.join(cmd.in_folder, "*.gbk"))
     gbks_path_file = os.path.join(cmd.out_folder, "input_gbks.txt")
     with open(gbks_path_file, "w") as gbk_out:
-        if not cmd.visualise_subclusters:
+        if cmd.visualise_subclusters:
             for gbk in in_gbks:
                 gbk_out.write(f"{gbk}\n")
         else:
