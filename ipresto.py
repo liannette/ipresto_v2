@@ -328,27 +328,19 @@ def presto_stat_build_subclusters(
         mod_file_f = '{}_filtered_modules.txt'.format(
             filt_file.split('_filtered_clusterfile.csv')[0])
         write_module_file(mod_file_f, modules, bgcs_with_mods)
-
-        # todo: assess if this output is necessary
-        bgcmodfile = '{}_bgcs_with_mods.txt'.format(
-            filt_file.split('_filtered_clusterfile.csv')[0])
-        rank_mods = {pair[0]: i + 1 for i, pair in
-                     enumerate(sorted(modules.items(),
-                                      key=itemgetter(1)))}
-        write_bgcs_and_modules(bgcmodfile, f_clus_dict_rem, bgcs_with_mods,
-                               rank_mods)
+        modules_w_info = q_stat.read_mods(mod_file_f)
     else:
         # read previously inferred subclusters from file
         print("\nReading PRESTO-STAT subclusters from file:",
               stat_subclusters_file)
-        modules = q_stat.read_mods(stat_subclusters_file)
-        bgcs_with_mods = q_stat.link_all_mods2bgcs(f_clus_dict, list(modules),
-                                                   cores)
+        modules_w_info = q_stat.read_mods(stat_subclusters_file)
+        bgcs_with_mods = q_stat.link_all_mods2bgcs(
+            f_clus_dict, list(modules_w_info), cores)
 
     out_file = '{}_presto_stat_subclusters.txt'.format(
         filt_file.split('_filtered_clusterfile.csv')[0])
     print("\nWriting clusters with detected subclusters to", out_file)
-    q_stat.write_bgc_mod_fasta(bgcs_with_mods, modules, out_file)
+    q_stat.write_bgc_mod_fasta(bgcs_with_mods, modules_w_info, out_file)
     return out_file
 
 
