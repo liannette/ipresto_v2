@@ -17,6 +17,7 @@ from multiprocessing import cpu_count
 from sys import argv
 import logging
 from typing import Union, List
+import time
 
 
 def get_commands():
@@ -457,7 +458,8 @@ if __name__ == "__main__":
         with open(log_out, 'w') as outf:
             outf.write('\nUsing model from {}'.format(cmd.top_motifs_model))
         lda, lda_dict, bow_corpus = run_lda_from_existing(
-            cmd.top_motifs_model, dom_list, no_below=1, no_above=0.5)
+            cmd.top_motifs_model, dom_list, presto_top_dir,
+            no_below=1, no_above=0.5)
 
     process_lda(lda, lda_dict, bow_corpus, cmd.feat_num, bgcs,
                 cmd.min_feat_score, bgclist, presto_top_dir, bgc_classes_dict,
