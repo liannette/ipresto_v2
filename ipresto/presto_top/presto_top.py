@@ -30,6 +30,7 @@ from collections import Counter, defaultdict
 from gensim.models.ldamulticore import LdaMulticore
 # from gensim.models.coherencemodel import CoherenceModel
 from gensim.corpora.dictionary import Dictionary
+from gensim.corpora.mmcorpus import MmCorpus
 from math import ceil
 from numpy import sqrt
 from operator import itemgetter
@@ -95,6 +96,9 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
     print('\nConstructing LDA model with {} BGCs and:'.format(len(domlist)),
           dict_lda)
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
+    corpus_file = model + 'mm'
+    if not os.path.isfile(corpus_file):
+        MmCorpus.serialize(corpus_file, corpus_bow)
     # to allow for x iterations of chunksize y
     passes = ceil(iters * chnksize / len(domlist))
     # gamma_threshold based on Blei et al. 2010
@@ -130,12 +134,14 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
     return lda, dict_lda, corpus_bow
 
 
-def run_lda_from_existing(existing_model, domlist, no_below=1, no_above=0.5):
+def run_lda_from_existing(existing_model, domlist, outfolder,
+                          no_below=1, no_above=0.5):
     """
     Returns existing LDA model with the Dictionary and the corpus.
 
     existing_model: str, filepath to lda model
     domlist: list of list of str, list of the bgc domain-combinations
+    outfolder: str, filepath
     no_below: int, domain-combinations that occur in less than no_below
         bgcs will be removed
     no_above: float, remove domain-combinations that occur in more than
@@ -147,6 +153,11 @@ def run_lda_from_existing(existing_model, domlist, no_below=1, no_above=0.5):
     dict_lda = Dictionary.load(dict_file)
 
     corpus_bow = [dict_lda.doc2bow(doms) for doms in domlist]
+    # save current corpus
+    corpus_file = os.path.join(outfolder, 'current_corpus.mm')
+    if not os.path.isfile(corpus_file):
+        MmCorpus.serialize(corpus_file, corpus_bow)
+
     lda = LdaMulticore.load(existing_model)
     print('Loaded existing LDA model')
     print('Applying existing LDA model on {} BGCs with'.format(len(domlist)),
