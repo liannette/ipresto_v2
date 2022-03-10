@@ -128,7 +128,8 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
     if ldavis:
         visname = os.path.join(outfolder, 'lda.html')
         print('Running pyLDAvis for visualisation')
-        vis = pyLDAvis.gensim.prepare(lda, corpus_bow, dict_lda)
+        vis = pyLDAvis.gensim.prepare(
+            lda, corpus_bow, dict_lda, sort_topics=False)
         print('  saving visualisation to html')
         pyLDAvis.save_html(vis, visname)
     return lda, dict_lda, corpus_bow
