@@ -51,7 +51,7 @@ def remove_infr_doms_str(clusdict, m_gens, verbose, cutoff=3):
     domcounter = Counter()
     domcounter.update([v for vals in clusdict.values() for v in vals
                        if not v == '-'])
-    deldoms = {key for key in domcounter if domcounter[key] <= cutoff}
+    deldoms = {key for key in domcounter if domcounter[key] < cutoff}
     print('  {} domain combinations are left, {} are removed'.format(
         len(domcounter.keys()) - len(deldoms), len(deldoms)))
     clus_no_deldoms = {}
@@ -126,11 +126,11 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
     # coherence = cm.get_coherence()
     # print('Coherence: {}, num_topics: {}'.format(coherence, num_topics))
     if ldavis:
-        visname = os.path.join(outfolder, 'lda.html')
+        visname = os.path.join(outfolder, 'lda_method-tsne.html')
         print('Running pyLDAvis for visualisation')
         vis = pyLDAvis.gensim.prepare(
-            lda, corpus_bow, dict_lda, sort_topics=False)
-        print('  saving visualisation to html')
+            lda, corpus_bow, dict_lda, sort_topics=False, mds='tsne')
+        print('  saving visualisation with t-sne to html')
         pyLDAvis.save_html(vis, visname)
     return lda, dict_lda, corpus_bow
 

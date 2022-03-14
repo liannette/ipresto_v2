@@ -18,6 +18,10 @@ from sys import argv
 import logging
 from typing import Union, List
 import time
+import os
+# to account for a weird bug with ldamulticore and numpy:
+# https://github.com/RaRe-Technologies/gensim/issues/1988
+os.environ['OMP_NUM_THREADS'] = '1'
 
 
 def get_commands():
@@ -428,7 +432,7 @@ if __name__ == "__main__":
         bgc_classes_dict = {bgc: 'None' for bgc in bgcs}
 
     if not cmd.top_motifs_model:
-        bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, False,
+        bgcs = remove_infr_doms_str(bgcs, cmd.min_genes, cmd.verbose,
                                     cmd.remove_genes_below_count)
 
     if cmd.amplify:

@@ -707,7 +707,7 @@ def remove_infr_doms(clusdict, m_gens, verbose, cutoff=3):
     clusdict: dict of {cluster:[(domains_of_a_gene)]}
     m_gens: int, minimal distinct genes a cluster must have to be included
     verbose: bool, if True print additional info
-    cutoff: int, remove genes (domain cominations) that occur below this cutoff
+    cutoff: int, remove genes (domain combinations) that occur less then cutoff
     """
     print(f'\nRemoving domain combinations that occur less than {cutoff} '
           'times')
