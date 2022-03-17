@@ -69,7 +69,8 @@ def remove_infr_doms_str(clusdict, m_gens, verbose, cutoff=3):
 
 
 def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
-            iters, chnksize, update_model=False, ldavis=True):
+            iters, chnksize, update_model=False, ldavis=True,
+            alpha='symmetric', beta=None):
     """
     Returns LDA model with the Dictionary and the corpus, LDAvis is optional
 
@@ -81,7 +82,14 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
     num_topics: int, number of topics
     cores: int, number of cores to use
     outfolder: str, filepath
+    iters: int, number of iterations for training
+    chnksize: int, chunksize for one training batch
+    update_model: bool, update the model (with same parameters) or not
     ldavis: bool, if true save LDAvis visualisation of model
+    alpha: str, alpha parameter for lda in string format, either symmetric,
+        auto or an integer.
+    beta: str, beta parameter for lda in string format, either symmetric,
+        auto or an integer.
     """
     model = os.path.join(outfolder, 'lda_model')
     # save the token ids the model will be build on.
@@ -103,12 +111,22 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
     passes = ceil(iters * chnksize / len(domlist))
     # gamma_threshold based on Blei et al. 2010
     offst = 1
+    # convert alpha/beta in int if needed
+    if alpha not in ['symmetric', 'asymmetric', 'auto']:
+        alpha = int(alpha)
+    if beta not in ['symmetric', 'asymmetric', 'auto']:
+        if beta == 'None':
+            beta = None
+        else:
+            beta = int(beta)
+
     if not os.path.exists(model):
         lda = LdaMulticore(
             corpus=corpus_bow, num_topics=num_topics,
             id2word=dict_lda, workers=cores, per_word_topics=True,
             chunksize=chnksize, iterations=iters, gamma_threshold=0.0001,
-            offset=offst, passes=passes, dtype=np.float64)
+            offset=offst, passes=passes, dtype=np.float64, alpha=alpha,
+            eta=beta)
         lda.save(model)
     else:
         print('Loaded existing LDA model')
@@ -131,7 +149,10 @@ def run_lda(domlist, no_below, no_above, num_topics, cores, outfolder,
         vis = pyLDAvis.gensim.prepare(
             lda, corpus_bow, dict_lda, sort_topics=False, mds='tsne')
         print('  saving visualisation with t-sne to html')
-        pyLDAvis.save_html(vis, visname)
+        try:
+            pyLDAvis.save_html(vis, visname)
+        except TypeError as e:
+            print('  saving visualisation failed with:', e)
     return lda, dict_lda, corpus_bow
 
 
@@ -532,11 +553,11 @@ def retrieve_match_per_bgc(topic_matches, bgc_classes, known_subcl, outfolder,
                         # overlap bgc class topic prob genes:prob
                         outf.write('{}\n'.format('\t'.join(
                             map(str, m_overlap))))
-        if plot:
-            outname = os.path.join(outfolder,
-                                   'known_subcluster_matches_vs_cutoff.pdf')
-            line_plot_known_matches(known_subcl_matches, outname,
-                                    cutoff=cutoff)
+        # plot the overlap with known subcluster matches
+        outname = os.path.join(outfolder,
+                               'known_subcluster_matches_vs_cutoff.pdf')
+        line_plot_known_matches(known_subcl_matches, outname,
+                                cutoff=cutoff)
     return bgc2topic
 
 

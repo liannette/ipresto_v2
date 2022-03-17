@@ -168,7 +168,12 @@ def get_commands():
         existing model will be updated with original parameters, new \
         parameters cannot be passed in the LdaMulticore version.",
         default=False, action="store_true")
-
+    parser.add_argument(
+        "--alpha", default="symmetric", help="alpha parameter for the LDA \
+        model, see gensim. Options: (a)symmetric, auto, or <int>")
+    parser.add_argument(
+        "--beta", default="symmetric", help="beta parameter for the LDA \
+        model, see gensim. Options: (a)symmetric, auto, or <int>")
     return parser.parse_args()
 
 
@@ -457,7 +462,8 @@ if __name__ == "__main__":
             dom_list, no_below=cmd.remove_genes_below_count, no_above=0.5,
             num_topics=cmd.topics, cores=cmd.cores, outfolder=presto_top_dir,
             iters=cmd.iterations, chnksize=cmd.chunksize,
-            update_model=cmd.update, ldavis=cmd.visualise)
+            update_model=cmd.update, ldavis=cmd.visualise, alpha=cmd.alpha,
+            beta=cmd.beta)
     else:
         with open(log_out, 'w') as outf:
             outf.write('\nUsing model from {}'.format(cmd.top_motifs_model))
