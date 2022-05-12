@@ -36,7 +36,7 @@ setup(
           'matplotlib',
           'networkx',
           'numpy',
-          'gensim',
+          'gensim==3.8.3',
           'pyLDAvis',
           'pandas',
           'scipy',
