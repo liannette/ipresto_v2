@@ -1,6 +1,6 @@
 # Basic CI for doing testing in python 3.6 with pytest
 
-image: python3.6
+image: python:3.6
 
 stages:          # List of stages for jobs, and their order of execution
   - build
