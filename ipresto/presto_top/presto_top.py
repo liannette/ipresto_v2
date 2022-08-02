@@ -195,13 +195,20 @@ def run_lda_from_existing(existing_model, domlist, outfolder,
 def process_lda(lda, dict_lda, corpus_bow, feat_num, bgc_dict, min_f_score,
                 bgcs, outfolder, bgc_classes, num_topics, amplif=False,
                 min_t_match=0.05, min_feat_match=0.3, plot=True,
-                known_subcl=False):
+                known_subcl=False, overlap_score_cutoff=0.15,
+                total_feat_score_cutoff=1.1):
     """Analyses the topics in the bgcs
 
     lda: LdaMulticore, the lda model
     dict_lda
     bgc_dict: dict of {bgc:[domain_combinations]}
     bgcs: (amplified) list of bgc names
+    overlap_score_cutoff: float, minimal fraction of the topic that should be
+        present in the topic (subcluster) match
+    total_feat_score_cutoff: float, minimal amount of features (based on sum
+        of their feature scores) that should be present in subcluster, default:
+        1.1, meaning that as a proxy for gene presence, that at least more than
+        one gene should be present in the subcluster match
     """
     # this is a list of tuple (topic_num, 'features_with_scores')
     lda_topics = lda.print_topics(-1, 75)
@@ -231,8 +238,9 @@ def process_lda(lda, dict_lda, corpus_bow, feat_num, bgc_dict, min_f_score,
     top_match_file = os.path.join(outfolder, 'matches_per_topic.txt')
     t_matches = write_topic_matches(t_matches, bgc_classes, top_match_file,
                                     plot=False)
-    t_matches = filter_matches(t_matches, feat_scores, filt_features,
-                               min_t_match, min_feat_match)
+    t_matches = filter_matches(
+        t_matches, feat_scores, filt_features, min_t_match, min_feat_match,
+        overlap_score_cutoff)
     top_match_file_filt = top_match_file.split('.txt')[0] + '_filtered.txt'
     write_topic_matches(t_matches, bgc_classes, top_match_file_filt,
                         plot=plot)
@@ -752,7 +760,8 @@ def barplot_topic_stats(df, outname):
 
 
 def filter_matches(topic_matches, feat_scores, filt_features, min_t_match,
-                   min_feat_match):
+                   min_feat_match, overlap_score_cutoff=0.15,
+                   total_feat_score_cutoff=1.1):
     """Filters topic_matches based on cutoffs
 
     topic_matches: {topic:[[prob,(gene,prob)],bgc,overlap_score]}, topic
@@ -764,6 +773,10 @@ def filter_matches(topic_matches, feat_scores, filt_features, min_t_match,
     min_t_match: float, minimal score of a topic matching a bgc
     min_feat_match: float, minimal score of a feature matching in a topic in
         a bgc
+    overlap_score_cutoff: float, minimal fraction of the topic that should be
+        present in the topic (subcluster) match
+    total_feat_score_cutoff: float, minimal amount of features (based on sum
+        of their feature scores) that should be present in subcluster
     filt_topic_matches: {topic:[[prob,(gene,prob)],bgc,overlap_score]}
     """
     print('\nFiltering matches')
@@ -783,12 +796,18 @@ def filter_matches(topic_matches, feat_scores, filt_features, min_t_match,
             match_p = match[0]
             newfeats = []
             overlap_score = 0
+            total_feat_scores = 0  # proxy for amount of genes in the subcl
             for feat in match[1]:
                 dom_com = feat[0]
                 if dom_com in use_feats and feat[1] >= min_feat_match:
                     newfeats.append(feat)
+                    total_feat_scores += feat[1]
                     overlap_score += feats_dict[dom_com]
-            if match_p > min_t_match and overlap_score > 0.15:
+            # instead of filtering on probability (min_t_match), we filter on
+            # sum of the newfeats scores as bgcs can be very large
+            # removed: match_p > min_t_match
+            if total_feat_scores > total_feat_score_cutoff and \
+                    overlap_score > overlap_score_cutoff:
                 if newfeats:
                     bgc = match[2]
                     filt_topic_matches[topic].append([match_p, newfeats, bgc,
