@@ -492,13 +492,14 @@ if __name__ == "__main__":
     # todo: return from step 1.
     in_gbks = glob(os.path.join(cmd.in_folder, "*.gbk"))
     gbks_path_file = os.path.join(cmd.out_folder, "input_gbks.txt")
-    with open(gbks_path_file, "w") as gbk_out:
-        if cmd.visualise_subclusters:
-            for gbk in in_gbks:
-                gbk_out.write(f"{gbk}\n")
-        else:
-            for gbk in in_gbks[:1000]:
-                gbk_out.write(f"{gbk}\n")
+    if not os.path.isfile(gbks_path_file):
+        with open(gbks_path_file, "w") as gbk_out:
+            if cmd.visualise_subclusters:
+                for gbk in in_gbks:
+                    gbk_out.write(f"{gbk}\n")
+            else:
+                for gbk in in_gbks[:1000]:
+                    gbk_out.write(f"{gbk}\n")
     dom_col_file = os.path.join(ipresto_dir, "files",
                                 "domains_colour_file.tsv")
     dom_hits_file = '{}_dom_hits.txt'.format(
