@@ -44,8 +44,9 @@ if __name__ == '__main__':
         'python {} -i bla -o {} --start_from_clusterfile {} -t {} -C {} -I {} '
         '-c {} --classes {} --known_subclusters {} --include_list {} '
         '--min_genes 2 --no_redundancy_filtering --visualise '
-        '--stat_subclusters {} --hmm_path {} --alpha {} --beta {} | tee -a {}')
-    topic_range = [1, 10, 100, 500, 1000, 1500]
+        '--stat_subclusters {} --hmm_path {} --alpha {} --beta {} 2>&1 '
+        '| tee -a {}')
+    topic_range = []  # [1, 10, 100, 250, 500, 750, 1000, 1500]
 
     for topics in topic_range:
         alpha = 'symmetric'
@@ -59,7 +60,7 @@ if __name__ == '__main__':
         formatted_command = command.format(
             ipresto_path, output_dir, clust_file, topics,
             chunksize, iters, cores, classes, known_subcl,
-            biosynt_domains, stat_subcl, hmm, form_logfile, alpha, beta)
+            biosynt_domains, stat_subcl, hmm, alpha, beta, form_logfile)
 
         # run the command
         print(f"\n###Running, {formatted_command}\n")
@@ -70,50 +71,51 @@ if __name__ == '__main__':
                 f"Command '{formatted_command}' failed: {com_err}")
 
     # alpha beta opt
-    alpha_range = ['symmetric', 'auto', '1']
+    alpha_range = ['symmetric', 'asymmetric', '1']
     beta_range = [None, 'auto', '1']  # also called eta
     topics = 1000
     for alpha in alpha_range:
-        beta = None
-        output_dir = (
-            f'ipresto_out_topics-{topics}_alpha-{alpha}_beta-{beta}')
-        if os.path.isdir(output_dir):
-            print(f'\n###{output_dir} already exists, '
-                  f'model not trained again\n')
-        form_logfile = logfile.format(output_dir)
-        formatted_command = command.format(
-            ipresto_path, output_dir, clust_file, topics,
-            chunksize, iters, cores, classes, known_subcl,
-            biosynt_domains, stat_subcl, hmm, form_logfile, alpha, beta)
+        # beta = None
+        for beta in beta_range:
+            output_dir = (
+                f'ipresto_out_topics-{topics}_alpha-{alpha}_beta-{beta}')
+            if os.path.isdir(output_dir):
+                print(f'\n###{output_dir} already exists, '
+                      f'model not trained again\n')
+            form_logfile = logfile.format(output_dir)
+            formatted_command = command.format(
+                ipresto_path, output_dir, clust_file, topics,
+                chunksize, iters, cores, classes, known_subcl,
+                biosynt_domains, stat_subcl, hmm, alpha, beta, form_logfile)
 
-        # run the command
-        print(f"\n###Running, {formatted_command}\n")
-        try:
-            subprocess.check_call(formatted_command, shell=True)
-        except subprocess.CalledProcessError as com_err:
-            print(
-                f"Command '{formatted_command}' failed: {com_err}")
+            # run the command
+            print(f"\n###Running, {formatted_command}\n")
+            try:
+                subprocess.check_call(formatted_command, shell=True)
+            except subprocess.CalledProcessError as com_err:
+                print(
+                    f"Command '{formatted_command}' failed: {com_err}")
 
-    for beta in beta_range:
-        alpha = 'symmetric'
-        output_dir = (
-            f'ipresto_out_topics-{topics}_alpha-{alpha}_beta-{beta}')
-        if os.path.isdir(output_dir):
-            print(f'\n###{output_dir} already exists, '
-                  f'model not trained again\n')
-        form_logfile = logfile.format(output_dir)
-        formatted_command = command.format(
-            ipresto_path, output_dir, clust_file, topics,
-            chunksize, iters, cores, classes, known_subcl,
-            biosynt_domains, stat_subcl, hmm, form_logfile, alpha, beta)
-
-        # run the command
-        print(f"\n###Running, {formatted_command}\n")
-        try:
-            subprocess.check_call(formatted_command, shell=True)
-        except subprocess.CalledProcessError as com_err:
-            print(
-                f"Command '{formatted_command}' failed: {com_err}")
+    # for beta in beta_range:
+    #     alpha = 'symmetric'
+    #     output_dir = (
+    #         f'ipresto_out_topics-{topics}_alpha-{alpha}_beta-{beta}')
+    #     if os.path.isdir(output_dir):
+    #         print(f'\n###{output_dir} already exists, '
+    #               f'model not trained again\n')
+    #     form_logfile = logfile.format(output_dir)
+    #     formatted_command = command.format(
+    #         ipresto_path, output_dir, clust_file, topics,
+    #         chunksize, iters, cores, classes, known_subcl,
+    #         biosynt_domains, stat_subcl, hmm, alpha, beta, form_logfile)
+    #
+    #     # run the command
+    #     print(f"\n###Running, {formatted_command}\n")
+    #     try:
+    #         subprocess.check_call(formatted_command, shell=True)
+    #     except subprocess.CalledProcessError as com_err:
+    #         print(
+    #             f"Command '{formatted_command}' failed: {com_err}")
 
     end = time.time()
     print(f"\nCompleted in {end-start:.1f}s")
