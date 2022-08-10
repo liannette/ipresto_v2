@@ -20,10 +20,11 @@ def test_ipresto(tmp_path):
     hmm_path = os.path.join(
         tests_dir, "../../../subcluster_data/domains/Pfam_100subs_tc.hmm")
     include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
+    domtabs = os.path.join(test_files, "test_files_domtables")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
           f"--include_list {include_list} --remove_genes_below_count 0 " \
-          f"-p 1.0 -t 3 -I 30"
+          f"-p 1.0 -t 3 -I 30 --use_domtabs {domtabs}"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
@@ -45,10 +46,12 @@ def test_ipresto_query_presto_stat_presto_top(tmp_path):
                               "test_stat_subclusters.txt")
     test_motif_model = os.path.join(
         test_files, "test_subclusters", "lda_model")
+    domtabs = os.path.join(test_files, "test_files_domtables")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
           f"--include_list {include_list} --stat_subclusters {test_subcl} " \
-          f"-t 3 -I 30 --top_motifs_model {test_motif_model}"
+          f"-t 3 -I 30 --top_motifs_model {test_motif_model} " \
+          f"--use_domtabs {domtabs}"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
@@ -72,10 +75,12 @@ def test_ipresto_query_presto_stat_no_clans_presto_top(tmp_path):
                               "test_stat_subclusters_no_clans.txt")
     test_motif_model = os.path.join(
         test_files, "test_subclusters", "lda_model")
+    domtabs = os.path.join(test_files, "test_files_domtables")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 --no_redundancy_filtering " \
           f"--include_list {include_list} --stat_subclusters {test_subcl} " \
-          f"-t 3 -I 30 --top_motifs_model {test_motif_model}"
+          f"-t 3 -I 30 --top_motifs_model {test_motif_model} " \
+          f"--use_domtabs {domtabs}"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
@@ -94,10 +99,11 @@ def test_ipresto_red_filtering(tmp_path):
     hmm_path = os.path.join(
         tests_dir, "../../../subcluster_data/domains/Pfam_100subs_tc.hmm")
     include_list = os.path.join(tests_dir, "../files/biosynthetic_domains.txt")
+    domtabs = os.path.join(test_files, "test_files_domtables")
     cmd = f"python {ipresto_path} -i {test_files} -o {test_out} " \
           f"--hmm_path {hmm_path} -c 4 " \
           f"--include_list {include_list} --remove_genes_below_count 0 " \
-          f"-p 1.0 -t 3 -I 30"
+          f"-p 1.0 -t 3 -I 30 --use_domtabs {domtabs}"
     print(cmd)
     try:
         subprocess.check_call(cmd, shell=True)
