@@ -139,4 +139,5 @@ publication can be downloaded from the Zenodo https://doi.org/10.5281/zenodo.695
 
 Most important outputs are *_presto_stat_subclusters.txt, presto_top/bgc_topics_filtered.txt and
 *_ipresto_output_visualisation.html. They contain the input BGCs queried to PRESTO-STAT and the
-PRESTO-TOP sub-clusers, and visualisation of the sub-cluster results, respectively.
+PRESTO-TOP sub-clusers, and visualisation of the sub-cluster results, respectively. The
+annotations for the sub-cluster motifs from PRESTO-TOP can also be found on Zenodo.
