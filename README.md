@@ -48,6 +48,12 @@ system, it can be installed with conda in your ipresto environment:
 conda install -c bioconda hmmer
 ```
 
+Then you can download this repo to be able to run iPRESTO.
+```
+# navigate to where you want to download the ipresto repo
+git clone https://git.wur.nl/bioinformatics/iPRESTO.git
+```
+
 ## Querying existing sub-cluster models
 
 The sub-cluster models that were created in the publication can be downloaded from
