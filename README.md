@@ -26,6 +26,11 @@ E-mail: marnix.medema@wur.nl, justin.vanderhooft@wur.nl 
 
 ![Workflow](final_workflow_black_900ppi.png)
 
+# Citing iPRESTO
+
+Did you use iPRESTO for your work? Please cite our paper: https://doi.org/10.1371/journal.pcbi.1010462
+In there, you can also find more background information on the tool.
+
 ## Dependencies
 
 iPRESTO is build and tested in python3.6. The required python packages are
@@ -57,7 +62,7 @@ git clone https://git.wur.nl/bioinformatics/iPRESTO.git
 ## Querying existing sub-cluster models
 
 The sub-cluster models that were created in the publication can be downloaded from
-Zenodo at https://doi.org/10.5281/zenodo.6953657. They can then be used to query your own BGCs
+Zenodo at https://doi.org/10.5281/zenodo.6953656. They can then be used to query your own BGCs
 for sub-clusters. At that link you can also find the HMMs used in the publication (with the subPfam HMMs)
 and an example clusterfile with tokenised BGCs from the antiSMASH-DB dataset.
 
@@ -133,7 +138,7 @@ BGC_name2,-,Lant_dehydr_N;Lant_dehydr_C,LANC_like\n
 
 Other scripts fullfill additional roles for more functionality. subPfams can be
 created with https://github.com/satriaphd/build_subpfam. subPfams used in the
-publication can be downloaded from the Zenodo https://doi.org/10.5281/zenodo.6953657.
+publication can be downloaded from the Zenodo https://doi.org/10.5281/zenodo.6953656.
 
 ## Output
 
