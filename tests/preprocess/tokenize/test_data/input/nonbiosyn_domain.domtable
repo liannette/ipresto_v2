@@ -1,0 +1,23 @@
+#                                                                                                                                  --- full sequence --- -------------- this domain -------------   hmm coord   ali coord   env coord
+# target name        accession   tlen query name                                                                 accession   qlen   E-value  score  bias   #  of  c-Evalue  i-Evalue  score  bias  from    to  from    to  from    to  acc description of target
+#------------------- ---------- -----                                                       -------------------- ---------- ----- --------- ------ ----- --- --- --------- --------- ------ ----- ----- ----- ----- ----- ----- ----- ---- ---------------------
+ABC_trans_aux        PF03886.13   161 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730388.1_loc:1713;2307;+_1/7 -            197   5.5e-22   78.5   0.4   1   1   2.6e-26   6.3e-22   78.3   0.4     1   160    31   189    31   190 0.89 ABC-type transport auxiliary lipoprotein component
+NrsF                 PF06532.11   204 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-254005040.1_loc:2325;2946;-_2/7 -            206   1.6e-56  191.7  25.2   1   1   7.3e-61   1.8e-56  191.6  25.2     1   204     5   206     5   206 0.99 Negative regulator of sigma F
+Sigma70_r2           PF04542.14    71 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730390.1_loc:2947;3514;-_3/7 -            188   6.1e-13   48.8   0.0   1   1   1.7e-16   1.4e-12   47.7   0.0     2    70    29    99    28   100 0.88 Sigma-70 region 2
+Sigma70_r4_2         PF08281.12    54 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730390.1_loc:2947;3514;-_3/7 -            188   1.4e-10   41.1   0.1   1   1   3.1e-14   2.5e-10   40.3   0.1     4    52   126   174   123   176 0.96 Sigma-70, region 4
+Sigma70_ECF          PF07638.11   185 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730390.1_loc:2947;3514;-_3/7 -            188   1.2e-05   25.8   0.0   1   1   3.1e-09   2.6e-05   24.7   0.0     2   173     8   170     7   178 0.78 ECF sigma factor
+DoxX                 PF07681.12    85 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730391.1_loc:3696;4218;-_4/7 -            173   1.1e-18   68.0   5.2   1   1   8.8e-23   1.1e-18   68.0   5.2     2    83    38   131    37   133 0.92 DoxX
+DoxD                 PF04173.13   167 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730391.1_loc:3696;4218;-_4/7 -            173   3.3e-06   27.5   0.6   1   1   7.2e-10   8.9e-06   26.2   0.1    75   146   100   164    89   169 0.90 TQO small subunit DoxD
+DUF2063              PF09836.9     85 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730392.1_loc:4201;5014;-_5/7 -            270   1.7e-22   79.9   0.0   1   1   1.3e-26   3.1e-22   79.0   0.0     6    85    20   107    17   107 0.94 Putative DNA-binding domain
+DUF692               PF05114.13   263 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730499.1_loc:5000;5909;-_6/7 -            302    6e-102  340.8   0.0   1   1  2.8e-106  6.9e-102  340.6   0.0     3   261    25   288    23   290 0.97 Protein of unknown function (DUF692)
+DUF2282              PF10048.9     53 NZ_JAMDLH010000010.1.region001_gid:_pid:WP-251730393.1_loc:5952;6267;-_7/7 -            104     1e-22   80.3   3.1   1   1   5.9e-27   1.5e-22   79.8   3.1     1    51    41    92    41    97 0.92 Predicted integral membrane protein (DUF2282)
+#
+# Program:         hmmscan
+# Version:         3.3.2 (Nov 2020)
+# Pipeline mode:   SCAN
+# Query file:      /lustre/BIF/nobackup/lien002/projects/ipresto_runs/antismash_db_v4/results/ipresto_results_batch_11/asdb_gbks_batch_11_fasta/NZ_JAMDLH010000010.1.region001.fasta
+# Target file:     /lustre/BIF/nobackup/lien002/data/ipresto_data/Pfam_100subs_tc.hmm
+# Option settings: hmmscan -o /lustre/BIF/nobackup/lien002/projects/ipresto_runs/antismash_db_v4/results/ipresto_results_batch_11/asdb_gbks_batch_11_domtables/hmmlog.txt --domtblout /lustre/BIF/nobackup/lien002/projects/ipresto_runs/antismash_db_v4/results/ipresto_results_batch_11/asdb_gbks_batch_11_domtables/NZ_JAMDLH010000010.1.region001.domtable --cut_tc --cpu 0 /lustre/BIF/nobackup/lien002/data/ipresto_data/Pfam_100subs_tc.hmm /lustre/BIF/nobackup/lien002/projects/ipresto_runs/antismash_db_v4/results/ipresto_results_batch_11/asdb_gbks_batch_11_fasta/NZ_JAMDLH010000010.1.region001.fasta 
+# Current dir:     /lustre/BIF/nobackup/lien002/projects/ipresto_runs/antismash_db_v4
+# Date:            Sat Apr 27 07:12:46 2024
+# [ok]

@@ -1,0 +1,26 @@
+#                                                                                                      --- full sequence --- -------------- this domain -------------   hmm coord   ali coord   env coord
+# target name        accession   tlen query name                                     accession   qlen   E-value  score  bias   #  of  c-Evalue  i-Evalue  score  bias  from    to  from    to  from    to  acc description of target
+#------------------- ---------- -----                           -------------------- ---------- ----- --------- ------ ----- --- --- --------- --------- ------ ----- ----- ----- ----- ----- ----- ----- ---- ---------------------
+AzlC                 PF03591.14   136 BGC0002659_gid:_pid:EPC01630.1_loc:308;1040;-_2/5 -            243   4.2e-28   98.9   9.2   1   1   1.7e-32   4.2e-28   98.9   9.2     1   136    29   162    29   162 0.95 AzlC protein
+2OG-Fe_Oxy_2         PF10014.9    191 BGC0002659_gid:_pid:EPC01631.1_loc:1036;1765;-_3/5 -            242   4.2e-32  111.9   0.4   1   1   2.7e-36   6.7e-32  111.3   0.4     2   190    33   218    32   219 0.92 2OG-Fe dioxygenase
+Radical_SAM_c10      -            149 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   1.3e-26   94.0   0.0   1   1   7.1e-24   9.8e-21   74.9   0.0    18   145   166   294   156   299 0.86 -
+Radical_SAM_c90      -            156 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   1.6e-13   51.2   0.0   1   1   8.8e-12   1.2e-08   35.4   0.0    33   154   186   317   171   318 0.79 -
+Radical_SAM_c55      -            146 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   3.3e-12   47.0   0.1   1   1   6.9e-11   9.4e-08   32.5   0.0    41   142   199   303   170   307 0.80 -
+Radical_SAM_c5       -            156 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   3.8e-12   46.8   0.1   1   1     2e-14   2.8e-11   44.1   0.1     2   148   109   301   108   310 0.72 -
+Radical_SAM_c73      -            149 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   2.3e-11   44.3   0.0   1   1   1.5e-12     2e-09   38.0   0.0    39   145   191   303   167   308 0.82 -
+Radical_SAM_c6       -            148 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   4.8e-11   43.3   0.0   1   1   3.4e-11   4.7e-08   33.6   0.0    34   144   190   303   162   307 0.80 -
+Radical_SAM_c75      -            151 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   6.8e-11   43.0   0.0   1   1   3.1e-11   4.2e-08   33.9   0.0    47   146   200   301   165   305 0.86 -
+Radical_SAM_c58      -            149 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   6.7e-11   42.8   0.0   1   1   4.5e-12   6.2e-09   36.4   0.0    29   140   184   304   169   311 0.86 -
+Radical_SAM_c16      -            140 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   1.7e-09   38.1   0.0   1   1   5.3e-10   7.3e-07   29.6   0.0    36   137   190   298   167   301 0.79 -
+SPASM_c22            -             60 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   1.1e-08   35.8   0.0   1   1     2e-11   2.8e-08   34.5   0.0     1    60   391   445   391   445 0.95 -
+SPASM_c46            -             64 BGC0002659_gid:_pid:EPC01632.1_loc:1793;3296;-_4/5 -            500   4.2e-05   23.9   0.0   1   1   5.5e-08   7.5e-05   23.0   0.0     1    63   387   444   387   445 0.87 -
+#
+# Program:         hmmscan
+# Version:         3.3.2 (Nov 2020)
+# Pipeline mode:   SCAN
+# Query file:      ipresto_output/mibig_gbk_3.1_fasta/BGC0002659.fasta
+# Target file:     /lustre/BIF/nobackup/lien002/data/ipresto_data/Pfam_100subs_tc.hmm
+# Option settings: hmmscan -o ipresto_output/mibig_gbk_3.1_domtables/hmmlog.txt --domtblout ipresto_output/mibig_gbk_3.1_domtables/BGC0002659.domtable --cut_tc --cpu 0 /lustre/BIF/nobackup/lien002/data/ipresto_data/Pfam_100subs_tc.hmm ipresto_output/mibig_gbk_3.1_fasta/BGC0002659.fasta 
+# Current dir:     /lustre/BIF/nobackup/lien002/projects/mibig_subclusters
+# Date:            Sat Dec 16 01:01:21 2023
+# [ok]

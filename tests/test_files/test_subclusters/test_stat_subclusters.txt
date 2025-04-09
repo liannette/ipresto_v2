@@ -1,3 +1,0 @@
-Number	N_Occurences	N_Genes	N_Domains	Strictest_detection_cutoff	Module	Family	Clan
-19	444	3	6	0	3HCDH_N;3HCDH,Acyl-CoA_dh_N;Acyl-CoA_dh_M;Acyl-CoA_dh_1_c24,PP-binding_c15	509	206
-47	530	3	3	0	Epimerase_c2,NTP_transferase,dTDP_sugar_isom	7725	452

@@ -1,11 +1,13 @@
-#!/usr/bin/env python
 import os
+import sys
+from setuptools import setup, find_packages
 
-from setuptools import setup
-from setuptools import find_packages
+# Check if Python version is supported
+if sys.version_info[:2] != (3, 6):
+    sys.exit("iPRESTO requires Python 3.6")
+
 
 here = os.path.abspath(os.path.dirname(__file__))
-
 version = {}
 with open(os.path.join(here, "ipresto", "__version__.py")) as f:
     exec(f.read(), version)
@@ -16,8 +18,8 @@ with open("README.md", "r") as fh:
 setup(
     name="iPRESTO",
     version=version["__version__"],
-    author="Joris Louwen",
-    author_email="jorislouwen@hotmail.com",
+    author="Annette Lien",
+    author_email="a.lien@posteo.de",
     description="Detection of biosynthetic sub-clusters",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -30,7 +32,7 @@ setup(
         "Operating System :: OS Independent",
     ],
     test_suite="tests",
-    python_requires='>=3.6',
+    python_requires='==3.6.*',
     install_requires=[
           'biopython',
           'matplotlib',
@@ -44,7 +46,15 @@ setup(
           'statsmodels',
           'sympy'
       ],
-    extras_require={"dev": ["pytest",
-                            "pytest-cov"]},
-    scripts=['ipresto.py']
+    extras_require={
+        "dev": [
+            "pytest",
+            "pytest-cov"
+        ]
+    },
+    entry_points={
+        "console_scripts": [
+            "ipresto-cli = ipresto.cli:main"
+        ]
+    },
 )
