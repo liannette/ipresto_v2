@@ -1,6 +1,6 @@
 build/
 iPRESTO.egg-info/
 dist/
-ipresto/presto_stat/__pycache__/
-ipresto/presto_top/__pycache__/
-ipresto/__pycache__/
+*__pycache__/
+
+.vscode/
