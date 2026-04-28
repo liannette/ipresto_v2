@@ -94,6 +94,23 @@ def visualize_evaluation_results(
         motif_hits = session.data.bgc2hits.get(bgc_id, [])
         motif_ids = [hit["motif_id"] for hit in motif_hits]
 
+        # Round scores if they're numeric
+        overlap_score = subcluster.get("overlap_score", "N/A")
+        penalized_score = subcluster.get("penalized_score", "N/A")
+
+        if overlap_score != "N/A":
+            try:
+                overlap_score = f"{float(overlap_score):.3f}"
+            except (ValueError, TypeError):
+                pass
+        
+        if penalized_score != "N/A":
+            try:
+                penalized_score = f"{float(penalized_score):.3f}"
+            except (ValueError, TypeError):
+                pass
+
+
         index_entries.append(
             {
                 "href": html_filename,
@@ -101,8 +118,8 @@ def visualize_evaluation_results(
                 "substructure_name": subcluster["substructure_name"],
                 "substructure_class": subcluster["substructure_class"],
                 "best_motif_hit": subcluster.get("best_motif_hit", "N/A"),
-                "overlap_score": subcluster.get("overlap_score", "N/A"),
-                "penalized_score": subcluster.get("penalized_score", "N/A"),
+                "overlap_score": overlap_score,
+                "penalized_score": penalized_score,
                 "bgc_id": bgc_id,
                 "motif_ids": motif_ids
             }
