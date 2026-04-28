@@ -2,7 +2,6 @@ from pathlib import Path
 import logging
 import csv
 import subsketch as subsk
-import pandas as pd
 from subsketch.reports import generate_html_for_annotated_subcluster
 from subsketch.io import read_compounds
 from subsketch.loaders import load_mibig_bgc
@@ -137,7 +136,7 @@ def write_index_html(index_html_path, index_entries):
                 }}
                 
                 .container {{
-                  max-width: 1400px; margin: 0 auto;
+                  max-width: 2000px; margin: 0 auto;
                   background: rgba(255, 255, 255, 0.95);
                   backdrop-filter: blur(10px); border-radius: 20px;
                   box-shadow: 0 20px 40px rgba(0,0,0,0.1); overflow: hidden;
@@ -172,12 +171,12 @@ def write_index_html(index_html_path, index_entries):
                         border-radius: 16px; overflow: hidden; }}
                 
                 th {{ background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
-                     padding: 1.25rem 1.5rem; text-align: left; font-weight: 600;
-                     font-size: 0.95rem; text-transform: uppercase; 
+                     padding: 1.25rem 1rem; text-align: left; font-weight: 600;
+                     font-size: 0.85rem; text-transform: uppercase; 
                      letter-spacing: 0.05em; color: #475569; 
-                     border-bottom: 3px solid #e2e8f0; }}
+                     border-bottom: 3px solid #e2e8f0; white-space: nowrap; }}
                 
-                td {{ padding: 1.25rem 1.5rem; border-bottom: 1px solid #f1f5f9;
+                td {{ padding: 1.25rem 1rem; border-bottom: 1px solid #f1f5f9;
                      vertical-align: middle; }}
                 
                 tr:hover {{ background: linear-gradient(90deg, #f8fafc 0%, #f1f5f9 100%);
@@ -195,7 +194,7 @@ def write_index_html(index_html_path, index_entries):
                 .sc-link::before {{ content: '🔗'; font-size: 1.1em; }}
                 
                 .motif-ids {{ background: #f8fafc; padding: 0.75rem; border-radius: 8px;
-                             font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9rem;
+                             font-family: 'Monaco', 'Menlo', monospace; font-size: 0.85rem;
                              border-left: 4px solid #4f46e5; word-break: break-all; }}
                 
                 @media (max-width: 768px) {{
