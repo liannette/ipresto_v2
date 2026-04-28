@@ -59,8 +59,6 @@ build = [
     "sympy",
     "scikit-learn",
     "networkx",
-    "hdbscan",
-    "umap-learn"
 ]
 
 [project.scripts]
