@@ -1,8 +1,6 @@
 import logging
-from pathlib import Path
 from typing import Dict, List, Tuple
-import json
-from collections import defaultdict, Counter
+from collections import defaultdict
 
 import numpy as np
 from sklearn.preprocessing import MultiLabelBinarizer, normalize
@@ -10,11 +8,8 @@ from sklearn.decomposition import TruncatedSVD
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.cluster import HDBSCAN as SklearnHDBSCAN
 
-from clusterclue.clusters.utils import read_clusters
-from clusterclue.gwms.create.combine_matches import combine_presto_matches
 from clusterclue.classes.subcluster_motif import SubclusterMotif
-from clusterclue.gwms.create.build_gwms import build_motif_gwms, write_motif_gwms
-from clusterclue.gwms.create.merge_motifs import merge_similar_motifs
+
 
 
 logger = logging.getLogger(__name__)
