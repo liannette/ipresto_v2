@@ -190,7 +190,9 @@ def visualise_gwm_hits(
         compounds_file=compound_structures_filepath,
         domain_colors_file=Path(files("clusterclue").joinpath("data").joinpath("domain_colors.txt"))
     )
-    session.load()
+
+    logger.info("Loading SubSketch session...")
+    session.load(n_jobs)
     
     # Generate all reports with master index in one call
     logger.info(f"Generating comprehensive report with {len(session.data.bgcs)} BGCs and {len(session.data.motifs)} motifs")
