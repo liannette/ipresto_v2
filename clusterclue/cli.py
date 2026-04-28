@@ -377,9 +377,15 @@ def get_commands():
         "--overlap_penalty_alpha",
         dest="overlap_penalty_alpha",
         type=float,
-        default=0.5,
+        default=0.25,
         metavar="<float>",
-        help="Alpha parameter for overlap penalty in evaluation (default: 0.5)",
+        help=(
+            "Penalty strength for redundant GWM matches (default: 0.25). "
+            "Controls how heavily to penalize GWMs that match multiple subclusters. "
+            "Higher values (0.4-0.6) favor specificity and penalize redundancy more; "
+            "lower values (0.1-0.2) are more permissive of overlapping matches. "
+            "Used in MRPOS calculation: penalty = 1 / (1 + alpha * (n_matches - 1)^beta)"
+        ),
     )
     build.add_argument(
         "--overlap_penalty_beta",
@@ -387,7 +393,13 @@ def get_commands():
         type=float,
         default=2.0,
         metavar="<float>",
-        help="Beta parameter for overlap penalty in evaluation (default: 2.0)",
+        help=(
+            "Penalty growth rate for redundant GWM matches (default: 2.0). "
+            "Controls how quickly penalty increases with more overlapping matches. "
+            "beta=1 is linear growth, beta=2 (recommended) is quadratic, beta>2 is more aggressive. "
+            "Higher values exponentially penalize GWMs with many matches. "
+            "Used in MRPOS calculation: penalty = 1 / (1 + alpha * (n_matches - 1)^beta)"
+        ),
     )
     build.add_argument(
         "--ref_sc",
