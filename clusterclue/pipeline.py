@@ -298,6 +298,7 @@ def detect_existing_motifs(
         clusters_filepath=clusters_filepath,
         motifs_filepath=cmd.gwms_filepath,
         output_filepath=hits_filepath,
+        n_jobs=cmd.cores,
     )
 
     # Step 3: Visualize detected motif hits
@@ -312,4 +313,5 @@ def detect_existing_motifs(
             domain_hits_filepath=preprocess_dirpath / "all_domain_hits.txt",
             compound_structures_filepath=cmd.compound_smiles_filepath,
             output_dirpath=visualization_output_dirpath,
+            n_jobs=cmd.cores,
         )
