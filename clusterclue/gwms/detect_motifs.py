@@ -192,10 +192,13 @@ def visualise_gwm_hits(
     )
 
     logger.info("Loading SubSketch session...")
-    session.load(n_jobs)
+    session.load(n_jobs=n_jobs, load_bgcs_upfront=(n_jobs > 1))
     
     # Generate all reports with master index in one call
-    logger.info(f"Generating comprehensive report with {len(session.data.bgcs)} BGCs and {len(session.data.motifs)} motifs")
+    num_bgcs = len(session.list_genbanks())
+    num_motifs = len(session.data.motifs)
+    logger.info(f"Generating comprehensive report with {num_bgcs} BGCs and {num_motifs} motifs")
+    
     session.generate_all_reports_with_master_index(
         output_dir=output_dirpath,
         gene_arrow_scaling=60,
