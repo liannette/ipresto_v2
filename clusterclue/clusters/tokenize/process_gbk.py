@@ -19,7 +19,7 @@ def write_gbk_paths_file(gbks_dir_path, out_file_path):
 
 def convert_gbk2fasta(
     gbk_file_path,
-    out_dir_path,
+    out_file_path,
     include_contig_edge_clusters,
     verbose,
 ):
@@ -27,7 +27,7 @@ def convert_gbk2fasta(
 
     Parameters:
     gbk_file_path (str): Path to the input gbk file.
-    out_dir_path (str): Directory where the output FASTA file will be saved.
+    out_file_path (str): Path where the output FASTA file will be saved.
     include_contig_edge_clusters (bool): If True, include clusters at contig edges.
     verbose (bool): If True, print additional information to stdout.
 
@@ -83,7 +83,6 @@ def convert_gbk2fasta(
             num_genes += 1
 
     # write the fasta file
-    out_file_path = Path(out_dir_path) #/ f"{bgc_name}.fasta"
     with open(out_file_path, "w") as out:
         for seq in seqs:
             compl_header = "{}/{}".format(seq, num_genes)
@@ -93,7 +92,7 @@ def convert_gbk2fasta(
 
 def convert_gbk2fasta_wrapper(
     gbk_file_path,
-    out_folder,
+    out_dir_path,
     include_contig_edge_clusters,
     exclude_name,
     verbose
@@ -102,7 +101,7 @@ def convert_gbk2fasta_wrapper(
 
     Parameters:
         gbk_file_path (str): Path to the input gbk file.
-        out_folder (str): Directory where the output FASTA file will be saved.
+        out_dir_path (str): Directory where the output FASTA file will be saved.
         include_contig_edge_clusters (bool): If True, include clusters at contig edges.
         exclude_name (list): List of words; files containing any of these words in their name will be excluded.
         verbose (bool): If True, print additional information to stdout.
@@ -116,7 +115,7 @@ def convert_gbk2fasta_wrapper(
             - "converted" if the conversion to FASTA is successful.
     """
     gbk_file_path = Path(gbk_file_path)
-    out_file_path = Path(out_folder) / f"{gbk_file_path.stem}.fasta"
+    out_file_path = Path(out_dir_path) / f"{gbk_file_path.stem}.fasta"
 
     # exclude files with certain words in the name
     if any([word in str(gbk_file_path.stem) for word in exclude_name]):
@@ -182,7 +181,7 @@ def process_gbks(
     with pool:
         process_func = partial(
             convert_gbk2fasta_wrapper,
-            out_folder=fastas_dir_path,
+            out_dir_path=fastas_dir_path,
             include_contig_edge_clusters=include_contig_edge_clusters,
             exclude_name=exclude_name,
             verbose=verbose,
