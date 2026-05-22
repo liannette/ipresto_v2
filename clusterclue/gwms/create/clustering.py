@@ -54,7 +54,7 @@ class ClusteringComparison:
         
         return n_components, cumulative_variance
 
-    def apply_svd(self, target_variance=0.50, step=50, max_components=3000, random_state=42):
+    def apply_svd(self, target_variance=0.50, step=500, max_components=3000, random_state=42):
         """Apply SVD dimensionality reduction."""
         # Check cache first
         if target_variance in self._svd_cache:

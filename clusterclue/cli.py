@@ -300,10 +300,11 @@ def get_commands():
     build.add_argument(
         "--cluster_selection_epsilon",
         dest="cluster_selection_epsilon",
+        nargs="+",
         type=float,
-        default=0.1,
+        default=[0.0],
         metavar="<float>",
-        help="Cluster selection epsilon for HDBSCAN (default: 0.1)",
+        help="Cluster selection epsilons for HDBSCAN (default: [0.0])",
     )
     
     # GWMs - Merge parameters
@@ -323,14 +324,14 @@ def get_commands():
         type=float,
         default=[0.2],
         metavar="<float>",
-        help="Gene probability thresholds for merging (default: [0.2])",
+        help="Gene probability thresholds for merging and GWM building (default: [0.2])",
     )
     build.add_argument(
         "--merge_metrics",
         dest="merge_metrics",
         nargs="+",
         default=["jaccard"],
-        choices=["jaccard", "cosine"],
+        choices=["jaccard", "weighted"],
         help="Similarity metrics for merging (default: ['jaccard'])",
     )
     
@@ -362,15 +363,7 @@ def get_commands():
         metavar="<float>",
         help="Core gene thresholds to test (default: [0.9])",
     )
-    build.add_argument(
-        "--gwm_min_gene_probs",
-        dest="gwm_min_gene_probs",
-        nargs="+",
-        type=float,
-        default=[0.2],
-        metavar="<float>",
-        help="Min gene probabilities for GWM building (default: [0.2])",
-    )
+
     
     # GWMs - Evaluation parameters
     build.add_argument(
@@ -507,6 +500,145 @@ def get_commands():
         default=False,
         help="Prints more detailed information.",
     )
+
+    redo = subparsers.add_parser(
+        "redo",
+        help="Redo merging and GWM creation from existing initial motifs (skips clustering).",
+    )
+    redo.add_argument(
+        "--out",
+        dest="out_dir_path",
+        required=True,
+        metavar="<dir>",
+        help="Output directory containing existing clusterclue_motifs/ with initial motifs.",
+    )
+    # Reference files (needed for evaluation)
+    redo.add_argument(
+        "--ref_sc",
+        dest="reference_subclusters_filepath",
+        required=True,
+        metavar="<file>",
+        help="TSV file with annotated subclusters.",
+    )
+    redo.add_argument(
+        "--ref_gbks",
+        dest="reference_gbks_dirpath",
+        required=True,
+        metavar="<dir>",
+        help="Input directory containing gbk files of gene clusters with annotated subclusters.",
+    )
+    
+    # Merge parameters
+    redo.add_argument(
+        "--merge_similarity_thresholds",
+        dest="merge_similarity_thresholds",
+        nargs="+",
+        type=float,
+        default=[0.7],
+        metavar="<float>",
+        help="Similarity thresholds for merging motifs (default: [0.7])",
+    )
+    redo.add_argument(
+        "--merge_gene_thresholds",
+        dest="merge_gene_thresholds",
+        nargs="+",
+        type=float,
+        default=[0.2],
+        metavar="<float>",
+        help="Gene probability thresholds for merging (default: [0.2])",
+    )
+    redo.add_argument(
+        "--merge_metrics",
+        dest="merge_metrics",
+        nargs="+",
+        default=["jaccard"],
+        choices=["jaccard", "weighted"],
+        help="Similarity metrics for merging (default: ['jaccard'])",
+    )
+    
+    # GWM building parameters
+    redo.add_argument(
+        "--gwm_min_matches",
+        dest="gwm_min_matches",
+        nargs="+",
+        type=int,
+        default=[20],
+        metavar="<int>",
+        help="Min matches required for GWM building (default: [20])",
+    )
+    redo.add_argument(
+        "--gwm_min_core_genes",
+        dest="gwm_min_core_genes",
+        nargs="+",
+        type=int,
+        default=[2],
+        metavar="<int>",
+        help="Min core genes required for GWM building (default: [2])",
+    )
+    redo.add_argument(
+        "--gwm_core_thresholds",
+        dest="gwm_core_thresholds",
+        nargs="+",
+        type=float,
+        default=[0.9],
+        metavar="<float>",
+        help="Core gene thresholds to test (default: [0.9])",
+    )
+
+    
+    # Evaluation parameters
+    redo.add_argument(
+        "--overlap_penalty_alpha",
+        dest="overlap_penalty_alpha",
+        type=float,
+        default=0.25,
+        metavar="<float>",
+        help=(
+            "Penalty strength for redundant GWM matches (default: 0.25). "
+            "Controls how heavily to penalize GWMs that match multiple subclusters. "
+            "Higher values (0.4-0.6) favor specificity and penalize redundancy more; "
+            "lower values (0.1-0.2) are more permissive of overlapping matches. "
+            "Used in MRPOS calculation: penalty = 1 / (1 + alpha * (n_matches - 1)^beta)"
+        ),
+    )
+    redo.add_argument(
+        "--overlap_penalty_beta",
+        dest="overlap_penalty_beta",
+        type=float,
+        default=2.0,
+        metavar="<float>",
+        help=(
+            "Penalty growth rate for redundant GWM matches (default: 2.0). "
+            "Controls how quickly penalty increases with more overlapping matches. "
+            "beta=1 is linear growth, beta=2 (recommended) is quadratic, beta>2 is more aggressive. "
+            "Higher values exponentially penalize GWMs with many matches. "
+            "Used in MRPOS calculation: penalty = 1 / (1 + alpha * (n_matches - 1)^beta)"
+        ),
+    )
+    redo.add_argument(
+        "--visualize_evaluation",
+        dest="visualize_evaluation",
+        action="store_true",
+        default=False,
+        help="Visualize the detected motifs in the reference clusters in html reports.",
+    )
+    redo.add_argument(
+        "--compound_smiles",
+        dest="compound_smiles_filepath",
+        default=None,
+        metavar="<file>",
+        help="Path to a TSV file containing bgc_id, compound_name, compound_smiles. "
+        "If provided, compound structures will be visualized in the html reports.",
+    )
+    redo.add_argument(
+        "-v",
+        "--verbose",
+        dest="verbose",
+        action="store_true",
+        default=False,
+        help="Prints more detailed information.",
+    )
+    
     args = parser.parse_args()
 
     return args
@@ -534,7 +666,10 @@ def main():
             create_new_motifs(cmd, queue)
         elif cmd.mode == "detect":
             detect_existing_motifs(cmd, queue)
-
+        elif cmd.mode == "redo":
+            from clusterclue.pipeline import redo_merge_and_gwms
+            redo_merge_and_gwms(cmd, queue)
+            
         end_time = time.time()
         elapsed_time = end_time - start_time
         hours, remainder = divmod(elapsed_time, 3600)

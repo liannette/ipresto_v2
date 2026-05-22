@@ -15,6 +15,7 @@ from clusterclue.gwms.create.build_gwms import build_motif_gwms, write_motif_gwm
 from clusterclue.gwms.create.clustering import ClusteringComparison
 from clusterclue.gwms.create.combine_matches import combine_presto_matches
 from clusterclue.gwms.create.merge_motifs import merge_similar_motifs
+from clusterclue.gwms.create.reports import generate_evaluation_report
 from clusterclue.gwms.create.plots import generate_clustering_plots, plot_evaluation_summary
 from clusterclue.evaluate.evaluate_hits import (
     assign_best_hit,
@@ -34,116 +35,24 @@ def get_gene_background_count(clusters: dict) -> Counter:
     for genes in clusters.values():
         tokenized_genes = set([';'.join(gene) for gene in genes])
         gene_counts.update(tokenized_genes)
-    # remove genes without biosynthetic domains
-    gene_counts.pop("-", None) 
+    gene_counts.pop("-", None) # remove genes without biosynthetic domains
     return gene_counts
 
 
-def generate_evaluation_report(results: dict, output_file: Path):
-    """Generate human-readable biological evaluation report."""
-    with open(output_file, 'w') as f:
-        f.write("="*140 + "\n")
-        f.write("GWM EVALUATION REPORT\n")
-        f.write("="*140 + "\n\n")
-        
-        f.write("This report compares different configurations based on their ability to\n")
-        f.write("produce biologically valid Gene Weight Modules (GWMs) that match known subclusters.\n\n")
-        
-        # Summary table with all important metrics
-        f.write("SUMMARY TABLE\n")
-        f.write("-"*140 + "\n")
-        f.write(f"{'Config':<40} {'Method':<10} {'Initial':<8} {'Merged':<8} {'GWMs':<8} "
-                f"{'Overlap':<10} {'MRPOS':<10}\n")
-        f.write(f"{'':40} {'':10} {'Motifs':8} {'Motifs':8} {'':8} {'Score':10} {'Score':10}\n")
-        f.write("-"*140 + "\n")
-        
-        # Sort by penalized score (MRPOS - most important metric)
-        sorted_results = sorted(
-            [(name, r) for name, r in results.items() if 'error' not in r],
-            key=lambda x: x[1]['mean_penalized_score'],
-            reverse=True
-        )
-        
-        for name, result in sorted_results:
-            method = result['config']['method'].upper()
-            n_initial = result['n_initial_motifs']
-            n_merged = result['n_merged_motifs']
-            n_gwms = result['n_gwms']
-            overlap = result['mean_overlap_score']
-            penalized = result['mean_penalized_score']
-            
-            f.write(f"{name:<40} {method:<10} {n_initial:<8} {n_merged:<8} {n_gwms:<8} "
-                    f"{overlap:<10.4f} {penalized:<10.4f}\n")
-        
-        f.write("-"*140 + "\n\n")
-    
-        # Winner section
-        winner_name, winner = sorted_results[0]
-        f.write("="*140 + "\n")
-        f.write("BEST CONFIGURATION\n")
-        f.write("="*140 + "\n\n")
-        f.write(f"Winner: {winner_name}\n\n")
-        
-        f.write("Clustering Configuration:\n")
-        f.write(f"  Method: {winner['config']['method'].upper()}\n")
-        
-        if winner['config']['method'] == 'kmeans':
-            f.write(f"  K: {winner['config'].get('k', 'N/A')}\n")
-        else:
-            f.write(f"  Min cluster size: {winner['config'].get('min_cluster_size', 'N/A')}\n")
-            f.write(f"  Cluster selection epsilon: {winner['config'].get('cluster_selection_epsilon', 'N/A')}\n")
-        
-        f.write(f"  SVD: {winner['config'].get('use_svd', False)}\n")
-        if winner['config'].get('use_svd', False):
-            f.write(f"  Target variance: {winner['config'].get('target_variance', 'N/A')}\n")
-        
-        f.write("\nMerge Parameters:\n")
-        merge_params = winner.get('merge_params', {})
-        f.write(f"  Similarity threshold: {merge_params.get('similarity_threshold', 'N/A')}\n")
-        f.write(f"  Gene prob threshold: {merge_params.get('gene_threshold', 'N/A')}\n")
-        f.write(f"  Similarity metric: {merge_params.get('metric', 'N/A')}\n")
-        
-        f.write("\nGWM Hyperparameters:\n")
-        params = winner['gwm_hyperparameter']
-        f.write(f"  Min matches: {params['min_matches']}\n")
-        f.write(f"  Min core genes: {params['min_core_genes']}\n")
-        f.write(f"  Core threshold: {params['core_threshold']}\n")
-        f.write(f"  Min gene probability: {params['min_gene_prob']}\n")
-        
-        f.write("\nPipeline Results:\n")
-        f.write(f"  Initial motifs: {winner['n_initial_motifs']}\n")
-        f.write(f"  Merged motifs: {winner['n_merged_motifs']} "
-                f"({(winner['n_initial_motifs']-winner['n_merged_motifs'])/winner['n_initial_motifs']*100:.1f}% reduction)\n")
-        f.write(f"  Final GWMs: {winner['n_gwms']} "
-                f"({winner['n_gwms']/winner['n_merged_motifs']*100:.1f}% build success)\n")
-        
-        f.write("\nBiological Validation:\n")
-        f.write(f"  Mean overlap score: {winner['mean_overlap_score']:.4f}\n")
-        f.write(f"  Mean MRPOS (penalized): {winner['mean_penalized_score']:.4f}\n")
-        
-        f.write("\nCluster Quality Metrics:\n")
-        metadata = winner.get('metadata', {})
-        if 'silhouette_score' in metadata:
-            f.write(f"  Silhouette score: {metadata['silhouette_score']:.4f}\n")
-        if 'davies_bouldin_score' in metadata:
-            f.write(f"  Davies-Bouldin score: {metadata['davies_bouldin_score']:.4f}\n")
-        if 'calinski_harabasz_score' in metadata:
-            f.write(f"  Calinski-Harabasz score: {metadata['calinski_harabasz_score']:.2f}\n")
-        if 'noise_fraction' in metadata:
-            f.write(f"  Noise fraction: {metadata['noise_fraction']:.2%}\n")
-        
-        f.write("\n")
-        
-        f.write("="*140 + "\n")
-        f.write("\nKEY METRICS EXPLAINED\n")
-        f.write("-"*140 + "\n")
-        f.write("Overlap Score:      How well GWMs match reference subclusters (F1 score)\n")
-        f.write("MRPOS Score:        Mean Redundancy Penalized Overlap Score - overlap with penalty for cluster size\n")
-        f.write("Silhouette Score:   Cluster separation quality (-1 to 1, higher is better)\n")
-        f.write("Davies-Bouldin:     Cluster compactness (lower is better)\n")
-        f.write("Calinski-Harabasz:  Cluster definition quality (higher is better)\n")
-        f.write("Noise Fraction:     Proportion of modules classified as noise (HDBSCAN only)\n")
-        f.write("="*140 + "\n")
+def convert_numpy_types(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    if isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    elif isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    else:
+        return obj
 
 
 def save_module_label_mapping(modules: List[str], labels: np.ndarray, filepath: Path):
@@ -163,12 +72,11 @@ def analyze_motifs(motifs: Dict[str, SubclusterMotif]) -> Dict:
         return {}
     
     match_counts = [m.n_matches for m in motifs.values()]
-    core_gene_counts = [len(m.core_genes) for m in motifs.values()]
     all_genes = set()
     for m in motifs.values():
         all_genes.update(m.tokenized_genes)
     
-    return {
+    stats = {
         'total_motifs': len(motifs),
         'total_unique_genes': len(all_genes),
         'match_count_mean': np.mean(match_counts),
@@ -176,61 +84,56 @@ def analyze_motifs(motifs: Dict[str, SubclusterMotif]) -> Dict:
         'match_count_std': np.std(match_counts),
         'match_count_min': np.min(match_counts),
         'match_count_max': np.max(match_counts),
-        'core_genes_mean': np.mean(core_gene_counts),
-        'core_genes_median': np.median(core_gene_counts),
-        'core_genes_std': np.std(core_gene_counts),
-        'core_genes_min': np.min(core_gene_counts),
-        'core_genes_max': np.max(core_gene_counts),
     }
+    
+    # Only include core gene stats if core_genes attribute exists (after GWM building)
+    if hasattr(next(iter(motifs.values())), 'core_genes'):
+        core_gene_counts = [len(m.core_genes) for m in motifs.values()]
+        stats.update({
+            'core_genes_mean': np.mean(core_gene_counts),
+            'core_genes_median': np.median(core_gene_counts),
+            'core_genes_std': np.std(core_gene_counts),
+            'core_genes_min': np.min(core_gene_counts),
+            'core_genes_max': np.max(core_gene_counts),
+        })
+    
+    return stats
 
 
-def convert_numpy_types(obj):
-    """Recursively convert numpy types to native Python types for JSON serialization."""
-    if isinstance(obj, dict):
-        return {key: convert_numpy_types(value) for key, value in obj.items()}
-    elif isinstance(obj, list):
-        return [convert_numpy_types(item) for item in obj]
-    elif isinstance(obj, np.integer):
-        return int(obj)
-    elif isinstance(obj, np.floating):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    else:
-        return obj
 
+# ============================================================================
+# STEP 1: CLUSTERING
+# ============================================================================
 
-def generate_subcluster_motifs(
-    configs: List[dict], 
+def run_clustering(
+    configs: List[dict],
     stat_matches_filepath: Path,
     top_matches_filepath: Path,
     out_dirpath: Path,
-    merge_params: List[Tuple[float, float, str]],
     n_jobs: int
-    ):
+) -> dict:
     """
-    Generate subcluster motifs with multiple clustering and merge configurations.
+    Run clustering with multiple configurations.
     
     Args:
         configs: List of clustering configurations
         stat_matches_filepath: Path to STAT matches
         top_matches_filepath: Path to TOP matches
         out_dirpath: Output directory
-        merge_params: List of (similarity_threshold, gene_threshold, metric) tuples
         n_jobs: Number of parallel jobs
     
     Returns:
-        dict: Results for each clustering + merge combination
+        dict: Clustering results for each configuration
     """
-    logger.info("=== Generating subcluster motifs ===")
+    logger.info("=== Clustering subcluster modules ===")
 
-    # Use TOP and STAT results to create subcluster motifs
+    # Combine PRESTO matches
     combined_matches = combine_presto_matches(
         stat_matches_filepath, 
         top_matches_filepath,
     )
     
-    # create mapping for subcluster module to bgcs
+    # Create module to BGC mapping
     module2bgcs = defaultdict(list)
     for bgc_id, module in combined_matches:
         module2bgcs[module].append(bgc_id)
@@ -245,14 +148,14 @@ def generate_subcluster_motifs(
 
     for config in configs:
         name = config['name']
-        logger.info(f"Running clustering with configuration '{name}'...")
+        logger.info(f"Running clustering: {name}")
 
-        # create config-specific output directory
+        # Create config-specific output directory
         config_dir = out_dirpath / name
         config_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            # Step 1: Cluster
+            # Run clustering
             if config['method'] == 'kmeans':
                 labels, metadata = comparison.run_kmeans(
                     k=config['k'],
@@ -273,11 +176,7 @@ def generate_subcluster_motifs(
                 continue
 
             # Save module-label mapping
-            save_module_label_mapping(
-                modules, 
-                labels, 
-                config_dir / "module_labels.tsv"
-            )
+            save_module_label_mapping(modules, labels, config_dir / "module_labels.tsv")
 
             # Calculate cluster quality metrics
             cluster_metrics = comparison.calculate_cluster_metrics(labels)
@@ -287,123 +186,190 @@ def generate_subcluster_motifs(
             motifs = comparison.labels_to_motifs(labels)
             logger.info(f"Created {len(motifs)} initial motifs")
             
-            # save as pkl 
+            # Save motifs
             motifs_filepath = config_dir / f"motifs_{name}.pkl"
             with open(motifs_filepath, "wb") as f:
                 pickle.dump(motifs, f)
             logger.info(f"Saved initial motifs to {motifs_filepath}")
 
-            # Test each merge parameter combination
-            for sim_threshold, gene_threshold, metric in merge_params:
-                merge_name = f"sim{int(sim_threshold*100)}_gene{int(gene_threshold*100)}_{metric}"
-                full_name = f"{name}_{merge_name}"
-                
-                logger.info(f"  Merging with {merge_name}...")
-                logger.info(f"    Similarity threshold: {sim_threshold}")
-                logger.info(f"    Gene prob threshold: {gene_threshold}")
-                logger.info(f"    Metric: {metric}")
-                
-                # Merge similar motifs
-                merged_motifs = merge_similar_motifs(
-                    motifs, 
-                    similarity_threshold=sim_threshold,
-                    gene_prob_threshold=gene_threshold,
-                    similarity_metric=metric
-                )
-                logger.info(f"    Reduced {len(motifs)} → {len(merged_motifs)} motifs")
+            # Analyze motifs
+            motifs_stats = analyze_motifs(motifs)
 
-                # save merged motifs to file
-                merged_motifs_filepath = config_dir / f"motifs_merged_{merge_name}.pkl"
-                with open(merged_motifs_filepath, "wb") as f:
-                    pickle.dump(merged_motifs, f)
+            # Store results
+            results[name] = {
+                'config': config,
+                'metadata': metadata,
+                'n_motifs': len(motifs),
+                'motifs_stats': motifs_stats,
+                'motifs_filepath': str(motifs_filepath),
+                'config_dir': str(config_dir),
+            }
 
-                # Store clustering results
-                results[full_name] = {
-                    'config': config,
-                    'metadata': metadata,
-                    'merge_params': {
-                        'similarity_threshold': sim_threshold,
-                        'gene_threshold': gene_threshold,
-                        'metric': metric,
-                    },
-                    'n_initial_motifs': len(motifs),
-                    'n_merged_motifs': len(merged_motifs),
-                    'motifs_filepath': str(motifs_filepath),
-                    'merged_motifs_filepath': str(merged_motifs_filepath),
-                }
+            # Generate plots
+            try:
+                if metadata.get('use_svd', False):
+                    X_plot, _, _ = comparison.apply_svd(metadata.get('target_variance', 0.30))
+                else:
+                    X_plot = comparison.X.toarray()
+                
+                generate_clustering_plots(name, X_plot, labels, metadata, config_dir)
+            except Exception as e:
+                logger.warning(f"Error generating plots for {name}: {e}")
         
         except Exception as e:
             logger.error(f"Error in config {name}: {e}", exc_info=True)
-            # Mark all merge variants as errored
-            for sim_threshold, gene_threshold, metric in merge_params:
-                merge_name = f"sim{int(sim_threshold*100)}_gene{int(gene_threshold*100)}_{metric}"
-                results[f"{name}_{merge_name}"] = {'error': str(e)}
+            results[name] = {'error': str(e)}
 
-        # Save results after each config
-        summary_file = out_dirpath / "results_clustering.json"
-        with open(summary_file, 'w') as f:
-            json.dump(convert_numpy_types(results), f, indent=2)
+    # Save clustering results
+    results_file = out_dirpath / "results_clustering.json"
+    with open(results_file, 'w') as f:
+        json.dump(convert_numpy_types(results), f, indent=2)
+    logger.info(f"Saved clustering results to {results_file}")
 
-        # Generate plots (only once per clustering, not per merge)
-        try:
-            if metadata.get('use_svd', False):
-                X_plot, _, _ = comparison.apply_svd(metadata.get('target_variance', 0.30))
-            else:
-                X_plot = comparison.X.toarray()
+    return results
+
+
+# ============================================================================
+# STEP 2: MERGING
+# ============================================================================
+
+def run_merging(
+    clustering_results: dict,
+    merge_params: List[Tuple[float, float, str]],
+    out_dirpath: Path
+) -> dict:
+    """
+    Merge motifs with multiple parameter configurations.
+    
+    Args:
+        clustering_results: Results from run_clustering
+        merge_params: List of (similarity_threshold, gene_threshold, metric) tuples
+        out_dirpath: Output directory
+    
+    Returns:
+        dict: Merge results for each clustering + merge combination
+    """
+    logger.info("=== Running motif merging ===")
+    
+    results = {}
+    
+    for cluster_name, cluster_result in clustering_results.items():
+        if 'error' in cluster_result:
+            logger.warning(f"Skipping {cluster_name} due to clustering error")
+            continue
+        
+        # Load initial motifs
+        motifs_filepath = Path(cluster_result['motifs_filepath'])
+        with open(motifs_filepath, "rb") as f:
+            motifs = pickle.load(f)
+        logger.info(f"Loaded {len(motifs)} motifs for {cluster_name}")
+        
+        config_dir = Path(cluster_result['config_dir'])
+        
+        # Test each merge parameter combination
+        for sim_threshold, gene_threshold, metric in merge_params:
+            merge_name = f"sim{int(sim_threshold*100)}_gene{int(gene_threshold*100)}_{metric}"
+            full_name = f"{cluster_name}_{merge_name}"
             
-            generate_clustering_plots(name, X_plot, labels, metadata, config_dir)
-        except Exception as e:
-            logger.warning(f"Error generating plots for {name}: {e}")
+            logger.info(f"Merging with {merge_name}")
+            
+            # Merge similar motifs
+            merged_motifs = merge_similar_motifs(
+                motifs, 
+                similarity_threshold=sim_threshold,
+                gene_prob_threshold=gene_threshold,
+                similarity_metric=metric
+            )
+            logger.info(f"Reduced {len(motifs)} → {len(merged_motifs)} motifs")
+
+            # Save merged motifs
+            merged_motifs_filepath = config_dir / f"motifs_merged_{merge_name}.pkl"
+            with open(merged_motifs_filepath, "wb") as f:
+                pickle.dump(merged_motifs, f)
+
+            # Analyze merged motifs
+            merged_stats = analyze_motifs(merged_motifs)
+
+            # Store results
+            results[full_name] = {
+                'config': cluster_result['config'],
+                'metadata': cluster_result['metadata'],
+                'merge_params': {
+                    'similarity_threshold': sim_threshold,
+                    'gene_threshold': gene_threshold,
+                    'metric': metric,
+                },
+                'n_initial_motifs': cluster_result['n_motifs'],
+                'n_merged_motifs': len(merged_motifs),
+                'merged_motifs_stats': merged_stats,
+                'motifs_filepath': str(motifs_filepath),
+                'merged_motifs_filepath': str(merged_motifs_filepath),
+                'config_dir': str(config_dir),
+            }
+    
+    # Save merge results
+    results_file = out_dirpath / "results_merging.json"
+    with open(results_file, 'w') as f:
+        json.dump(convert_numpy_types(results), f, indent=2)
+    logger.info(f"Saved merge results to {results_file}")
     
     return results
 
 
-def generate_subcluster_gwms(
-    clustering_results: dict, 
-    gwm_hyperparams: List[Tuple[int, int, float, float]],
-    clusters_filepath: Path, 
+# ============================================================================
+# STEP 3: GWM BUILDING
+# ============================================================================
+
+def run_gwm_building(
+    merge_results: dict,
+    gwm_base_params: List[Tuple[int, int, float]],
+    clusters_filepath: Path,
     out_dirpath: Path
-    ):
+) -> dict:
     """
-    Build GWMs for all clustering + merge + GWM parameter combinations.
+    Build GWMs for all merge configurations with multiple GWM parameters.
     
     Args:
-        clustering_results: Results from generate_subcluster_motifs
-        gwm_hyperparams: List of (min_matches, min_core_genes, core_threshold, min_gene_prob) tuples
+        merge_results: Results from run_merging
+        gwm_base_params: List of (min_matches, min_core_genes, core_threshold) tuples
         clusters_filepath: Path to tokenized clusters
         out_dirpath: Output directory
     
     Returns:
-        dict: Results for each full configuration
+        dict: GWM results for each configuration
     """
-    logger.info("=== Building GWMs for merged motifs ===")
+    logger.info("=== Building GWMs ===")
     
     gwms_dirpath = out_dirpath / "gwms"
     gwms_dirpath.mkdir(parents=True, exist_ok=True)
 
-    # some variables necessary to build the gwms
+    # Load training data
     training_clusters = read_clusters(clusters_filepath)
     n_clusters_total = len(training_clusters)
     background_counts = get_gene_background_count(training_clusters)
 
-    new_results = {}
+    results = {}
     
-    for config_name, config_results in clustering_results.items():
-        if 'error' in config_results:
-            logger.warning(f"Skipping GWM building for {config_name} due to previous error")
+    for merge_name, merge_result in merge_results.items():
+        if 'error' in merge_result:
+            logger.warning(f"Skipping {merge_name} due to previous error")
             continue
 
-        # open the merged motifs file
-        merged_motifs_filepath = config_results.get('merged_motifs_filepath')
+        # Extract gene_prob used in merging
+        merge_gene_prob = merge_result['merge_params']['gene_threshold']
+
+        # Load merged motifs
+        merged_motifs_filepath = Path(merge_result['merged_motifs_filepath'])
         with open(merged_motifs_filepath, "rb") as f:
             merged_motifs = pickle.load(f)
-        logger.info(f"Loaded {len(merged_motifs)} merged motifs for {config_name}")
+        logger.info(f"Loaded {len(merged_motifs)} merged motifs for {merge_name}")
 
-        for mm, mgc, ct, mgp in gwm_hyperparams:
-            params_str = f"mm{mm}_mgc{mgc}_ct{int(ct * 100)}_mgp{int(mgp * 100)}"
-            name = f"{config_name}_{params_str}"
+        # Test GWM params, using the same gene_prob as merging
+        for mm, mgc, ct in gwm_base_params:
+            params_str = f"mm{mm}_mgc{mgc}_ct{int(ct * 100)}_mgp{int(merge_gene_prob * 100)}"
+            full_name = f"{merge_name}_{params_str}"
 
-            logger.info(f"Building GWMs for {name}...")
+            logger.info(f"Building GWMs: {params_str}")
                 
             gwms = build_motif_gwms(
                 merged_motifs,
@@ -412,53 +378,75 @@ def generate_subcluster_gwms(
                 min_matches=mm,
                 min_core_genes=mgc,
                 core_threshold=ct,
-                min_gene_prob=mgp,
+                min_gene_prob=merge_gene_prob,
             )
-            logger.info(f"Final GWMs: {len(gwms)}")
+            logger.info(f"Built {len(gwms)} GWMs")
 
-            gwm_filepath = gwms_dirpath / f"GWMs_{name}.txt"
+            # Save GWMs
+            gwm_filepath = gwms_dirpath / f"GWMs_{full_name}.txt"
             write_motif_gwms(gwms, gwm_filepath)
 
+            # Analyze GWMs
             gwms_stats = analyze_motifs(gwms)
         
-            # Store gwm results
-            new_results[name] = {
-                'config': config_results['config'],
-                'metadata': config_results['metadata'],
-                'merge_params': config_results['merge_params'],
-                'n_initial_motifs': config_results['n_initial_motifs'],
-                'n_merged_motifs': config_results['n_merged_motifs'],
-                'motifs_filepath': config_results['motifs_filepath'],
-                'merged_motifs_filepath': config_results['merged_motifs_filepath'],
+            # Store results
+            results[full_name] = {
+                'config': merge_result['config'],
+                'metadata': merge_result['metadata'],
+                'merge_params': merge_result['merge_params'],
+                'n_initial_motifs': merge_result['n_initial_motifs'],
+                'n_merged_motifs': merge_result['n_merged_motifs'],
+                'motifs_filepath': merge_result['motifs_filepath'],
+                'merged_motifs_filepath': merge_result['merged_motifs_filepath'],
                 'gwm_hyperparameter': {
                     'min_matches': mm,
                     'min_core_genes': mgc,
                     'core_threshold': ct,
-                    'min_gene_prob': mgp,
+                    'min_gene_prob': merge_gene_prob,
                 },
                 'n_gwms': len(gwms),
                 'gwms_stats': gwms_stats,
                 'gwms_filepath': str(gwm_filepath),
             }
+    
+    # Save GWM results
+    results_file = out_dirpath / "results_gwms.json"
+    with open(results_file, 'w') as f:
+        json.dump(convert_numpy_types(results), f, indent=2)
+    logger.info(f"Saved GWM results to {results_file}")
+    
+    return results
 
-            # Save results to avoid losing data if something crashes
-            summary_file = out_dirpath / "results_gwms.json"
-            with open(summary_file, 'w') as f:
-                json.dump(convert_numpy_types(new_results), f, indent=2)
-        
-    return new_results
 
+# ============================================================================
+# STEP 4: EVALUATION
+# ============================================================================
 
-def evaluate_subcluster_gwms(
-    results: dict,
+def run_evaluation(
+    gwm_results: dict,
     annotated_subclusters_filepath: Path,
     reference_clusters_filepath: Path,
     overlap_penalty_alpha: float,
     overlap_penalty_beta: float,
     out_dirpath: Path
-    ):
+) -> dict:
+    """
+    Evaluate GWMs against reference subclusters.
+    
+    Args:
+        gwm_results: Results from run_gwm_building
+        annotated_subclusters_filepath: Path to annotated subclusters
+        reference_clusters_filepath: Path to reference clusters
+        overlap_penalty_alpha: Alpha parameter for overlap penalty
+        overlap_penalty_beta: Beta parameter for overlap penalty
+        out_dirpath: Output directory
+    
+    Returns:
+        dict: Best result based on MRPOS
+    """
     logger.info("=== Evaluating GWMs ===")
     
+    # Load reference data
     annotated_subclusters = read_reference_subclusters_and_tokenize_genes(
         annotated_subclusters_filepath, 
         reference_clusters_filepath.parent / "all_domain_hits.txt"
@@ -468,47 +456,53 @@ def evaluate_subcluster_gwms(
     ref_clusters = parse_clusters_file(reference_clusters_filepath)
     logger.info(f"Loaded {len(ref_clusters)} reference clusters")
 
+    # Create output directories
     hits_dirpath = out_dirpath / "evaluation_hits"
     hits_dirpath.mkdir(parents=True, exist_ok=True)
 
     evaluation_dirpath = out_dirpath / "evaluation_best_hits"
     evaluation_dirpath.mkdir(parents=True, exist_ok=True)
 
-    for gwm_name, gwm_results in results.items():
-        
-        logger.info(f"Evaluating GWMs for {gwm_name}...")
+    results = gwm_results.copy()
 
-        # Detect motifs
-        gwm_filepath = Path(gwm_results['gwms_filepath'])
+    for gwm_name, gwm_result in results.items():
+        logger.info(f"Evaluating {gwm_name}")
+
+        # Load GWMs
+        gwm_filepath = Path(gwm_result['gwms_filepath'])
         gwms = parse_motifs_file(gwm_filepath)
+        
+        # Detect motifs
         hits = detect_motifs(ref_clusters, gwms)
-
         logger.info(f"Found {len(hits)} motif hits")
 
-        # Save motif hits to file            
+        # Save hits
         eval_hits_filepath = hits_dirpath / f"hits_{gwm_name}.txt"
         write_motif_hits(hits, gwms, eval_hits_filepath)
 
-        # Evaluate motif hits against annotated subclusters
+        # Evaluate against annotated subclusters
         eval_df = pd.DataFrame(
             annotated_subclusters.apply(
                 lambda row: assign_best_hit(
                     row, hits, 
-                    alpha=overlap_penalty_alpha, beta=overlap_penalty_beta
-                ), axis=1
+                    alpha=overlap_penalty_alpha, 
+                    beta=overlap_penalty_beta
+                ), 
+                axis=1
             ).tolist()
         )
-        # Save to csv
+        
+        # Save evaluation
         eval_best_hits_filepath = evaluation_dirpath / f"best_hits_{gwm_name}.txt"
         eval_df.to_csv(eval_best_hits_filepath, sep="\t", index=False)
 
+        # Calculate scores
         mean_overlap = eval_df["overlap_score"].mean()
         mean_penalized = eval_df["penalized_score"].mean()
         
-        logger.info(f"Overlap score: {mean_overlap:.4f}")
-        logger.info(f"Penalized score (MRPOS): {mean_penalized:.4f}")
+        logger.info(f"Overlap: {mean_overlap:.4f}, MRPOS: {mean_penalized:.4f}")
         
-        # Store results
+        # Update results
         results[gwm_name].update({
             'mean_overlap_score': float(mean_overlap),
             'mean_penalized_score': float(mean_penalized),
@@ -518,14 +512,18 @@ def evaluate_subcluster_gwms(
             'eval_best_hits_filepath': str(eval_best_hits_filepath),
         })
 
-        # Save results to avoid losing data if something crashes
-        summary_file = out_dirpath / "results_final.json"
-        with open(summary_file, 'w') as f:
-            json.dump(convert_numpy_types(results), f, indent=2)
+    # Save final results
+    results_file = out_dirpath / "results_final.json"
+    with open(results_file, 'w') as f:
+        json.dump(convert_numpy_types(results), f, indent=2)
+    logger.info(f"Saved final results to {results_file}")
 
-    # Get result with the best mean_penalized_score
-    best_name, best_result = max(results.items(), key=lambda x: x[1].get('mean_penalized_score', 0))
-    logger.info(f"GWM with best MRPOS: {best_name}")
+    # Find best configuration
+    best_name, best_result = max(
+        results.items(), 
+        key=lambda x: x[1].get('mean_penalized_score', 0)
+    )
+    logger.info(f"Best configuration: {best_name}")
     logger.info(f"  Overlap: {best_result['mean_overlap_score']:.4f}")
     logger.info(f"  MRPOS: {best_result['mean_penalized_score']:.4f}")
     logger.info(f"  GWMs: {best_result['n_gwms']:,}")
@@ -533,16 +531,15 @@ def evaluate_subcluster_gwms(
     # Generate report
     report_filepath = out_dirpath / "evaluation_report.txt"
     generate_evaluation_report(results, report_filepath)
-    logger.info(f"Wrote evaluation report to {report_filepath}")
-
-    # Generate comparison summary plot
-    plots_filepath = out_dirpath / "evaluation_plots.png"
-    plot_evaluation_summary(results, plots_filepath)
-    logger.info(f"Wrote evaluation plots to {plots_filepath}")
+    logger.info(f"Saved evaluation report to {report_filepath}")
 
     best_result["name"] = best_name
     return best_result
 
+
+# ============================================================================
+# MAIN PIPELINE FUNCTIONS
+# ============================================================================
 
 def create_and_evaluate_motif_gwms(
     stat_matches_filepath: Path,
@@ -554,20 +551,17 @@ def create_and_evaluate_motif_gwms(
     overlap_penalty_beta: float,
     out_dirpath: Path,
     n_jobs: int,
-    # Clustering parameters - NO DEFAULTS, must come from CLI
     clustering_configs: List[dict],
-    # Merge parameters - NO DEFAULTS, must come from CLI
     merge_similarity_thresholds: List[float],
     merge_gene_thresholds: List[float],
     merge_metrics: List[str],
-    # GWM parameters - NO DEFAULTS, must come from CLI
     gwm_min_matches: List[int],
     gwm_min_core_genes: List[int],
     gwm_core_thresholds: List[float],
     gwm_min_gene_probs: List[float],
 ):
     """
-    Create and evaluate motif GWMs with configurable parameters.
+    Full pipeline: clustering → merging → GWM building → evaluation.
     
     All parameters MUST be provided - no defaults.
     Parameters come from CLI arguments in pipeline.py.
@@ -580,34 +574,42 @@ def create_and_evaluate_motif_gwms(
         merge_metrics
     ))
     
-    gwm_hyperparams = list(product(
+    gwm_base_params = list(product(
         gwm_min_matches,
         gwm_min_core_genes,
         gwm_core_thresholds,
-        gwm_min_gene_probs,
     ))
     
-    logger.info(f"Testing {len(clustering_configs)} clustering configs × "
-               f"{len(merge_params)} merge configs × {len(gwm_hyperparams)} GWM configs = "
-               f"{len(clustering_configs) * len(merge_params) * len(gwm_hyperparams)} total configurations")
+    logger.info(f"Testing {len(clustering_configs)} clustering × "
+               f"{len(merge_params)} merge × {len(gwm_base_params)} GWM = "
+               f"{len(clustering_configs) * len(merge_params) * len(gwm_base_params)} total configurations")
 
-    clustering_results = generate_subcluster_motifs(
+    # Step 1: Clustering
+    clustering_results = run_clustering(
         clustering_configs,
         stat_matches_filepath,
         top_matches_filepath,
         out_dirpath,
-        merge_params,
         n_jobs
     )
 
-    gwm_results = generate_subcluster_gwms(
+    # Step 2: Merging
+    merge_results = run_merging(
         clustering_results,
-        gwm_hyperparams,
+        merge_params,
+        out_dirpath
+    )
+
+    # Step 3: GWM building
+    gwm_results = run_gwm_building(
+        merge_results,
+        gwm_base_params,
         clusters_filepath,
         out_dirpath,
     )
 
-    best_result = evaluate_subcluster_gwms(
+    # Step 4: Evaluation
+    best_result = run_evaluation(
         gwm_results,
         annotated_subclusters_filepath,
         reference_clusters_filepath,
@@ -616,4 +618,122 @@ def create_and_evaluate_motif_gwms(
         out_dirpath
     )
 
+    return best_result
+
+
+def create_and_evaluate_gwms_from_motifs(
+    motifs_dirpath: Path,
+    clusters_filepath: Path,
+    annotated_subclusters_filepath: Path,
+    reference_clusters_filepath: Path,
+    overlap_penalty_alpha: float,
+    overlap_penalty_beta: float,
+    out_dirpath: Path,
+    merge_similarity_thresholds: List[float],
+    merge_gene_thresholds: List[float],
+    merge_metrics: List[str],
+    gwm_min_matches: List[int],
+    gwm_min_core_genes: List[int],
+    gwm_core_thresholds: List[float],
+    gwm_min_gene_probs: List[float],
+):
+    """
+    Partial pipeline: start from existing motifs → merging → GWM building → evaluation.
+    
+    Skips clustering step and loads from pickled motif files.
+    
+    Args:
+        motifs_dirpath: Directory containing config subdirs with motifs_*.pkl files
+        ... (other args same as full pipeline)
+    """
+    
+    # Create parameter combinations
+    merge_params = list(product(
+        merge_similarity_thresholds,
+        merge_gene_thresholds,
+        merge_metrics
+    ))
+    
+    gwm_base_params = list(product(
+        gwm_min_matches,
+        gwm_min_core_genes,
+        gwm_core_thresholds,
+    ))
+    
+    logger.info(f"Testing {len(merge_params)} merge × {len(gwm_base_params)} GWM = "
+               f"{len(merge_params) * len(gwm_base_params)} configurations from existing motifs")
+    
+    # Load existing clustering results from motifs
+    clustering_results = {}
+    
+    for config_dir in sorted(motifs_dirpath.iterdir()):
+        if not config_dir.is_dir():
+            continue
+        
+        config_name = config_dir.name
+        motifs_pkl = config_dir / f"motifs_{config_name}.pkl"
+        
+        if not motifs_pkl.exists():
+            logger.warning(f"No motifs file at {motifs_pkl}, skipping {config_name}")
+            continue
+        
+        # Load motifs
+        with open(motifs_pkl, "rb") as f:
+            motifs = pickle.load(f)
+        
+        logger.info(f"Loaded {len(motifs)} motifs for {config_name}")
+        
+        # Load metadata if available
+        metadata = {}
+        metadata_file = config_dir / f"metadata_{config_name}.json"
+        if metadata_file.exists():
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+        
+        # Analyze motifs
+        motifs_stats = analyze_motifs(motifs)
+        
+        # Store results
+        clustering_results[config_name] = {
+            'config': {'name': config_name},
+            'metadata': metadata,
+            'n_motifs': len(motifs),
+            'motifs_stats': motifs_stats,
+            'motifs_filepath': str(motifs_pkl),
+            'config_dir': str(config_dir),
+        }
+    
+    if not clustering_results:
+        raise ValueError(f"No valid motifs found in {motifs_dirpath}. "
+                        f"Expected: {motifs_dirpath}/<config_name>/motifs_<config_name>.pkl")
+    
+    # Save loaded clustering results
+    results_file = out_dirpath / "results_clustering_loaded.json"
+    with open(results_file, 'w') as f:
+        json.dump(convert_numpy_types(clustering_results), f, indent=2)
+    logger.info(f"Saved loaded clustering results to {results_file}")
+    
+    # Continue with standard pipeline steps
+    merge_results = run_merging(
+        clustering_results,
+        merge_params,
+        out_dirpath
+    )
+    
+    gwm_results = run_gwm_building(
+        merge_results,
+        gwm_base_params,
+        clusters_filepath,
+        out_dirpath,
+    )
+    
+    best_result = run_evaluation(
+        gwm_results,
+        annotated_subclusters_filepath,
+        reference_clusters_filepath,
+        overlap_penalty_alpha,
+        overlap_penalty_beta,
+        out_dirpath
+    )
+    
     return best_result

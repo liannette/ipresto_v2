@@ -83,7 +83,7 @@ def merge_similar_motifs(
     subcluster_motifs, 
     similarity_threshold=0.8,
     gene_prob_threshold=0.1,
-    similarity_metric='weighted'
+    similarity_metric='jaccard'
 ):
     """
     Merges SubclusterMotif objects that are similar based on their gene sets.
@@ -110,8 +110,6 @@ def merge_similar_motifs(
     if n_motifs == 1:
         return subcluster_motifs
     
-    logger.info(f"Calculating pairwise similarities for {n_motifs} motifs...")
-    
     # Calculate pairwise similarity matrix
     similarity_func = (calculate_weighted_similarity 
                       if similarity_metric == 'weighted' 
@@ -133,7 +131,7 @@ def merge_similar_motifs(
     
     # Perform hierarchical clustering
     condensed_dist = squareform(distance_matrix, checks=False)
-    linkage_matrix = linkage(condensed_dist, method='average')
+    linkage_matrix = linkage(condensed_dist, method='complete')
     
     # Cut tree at similarity threshold
     cluster_labels = fcluster(
@@ -148,8 +146,6 @@ def merge_similar_motifs(
     for motif_id, cluster_id in zip(motif_ids, cluster_labels):
         clusters[cluster_id].append(motif_id)
     
-    logger.info(f"Found {len(clusters)} clusters from {n_motifs} motifs")
-    
     # Merge motifs within each cluster
     merged_motifs = {}
     for cluster_id, cluster_motif_ids in clusters.items():
@@ -162,10 +158,6 @@ def merge_similar_motifs(
             motif_group = [subcluster_motifs[mid] for mid in cluster_motif_ids]
             merged_motif = _merge_motif_group(motif_group, cluster_id)
             merged_motifs[merged_motif.motif_id] = merged_motif
-            logger.info(
-                f"Merged {len(cluster_motif_ids)} motifs into {merged_motif.motif_id}: "
-                f"{', '.join(cluster_motif_ids)}"
-            )
     
     return merged_motifs
 

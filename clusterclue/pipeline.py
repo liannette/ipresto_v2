@@ -162,16 +162,17 @@ def create_new_motifs(
                 
             for mcs in cmd.min_cluster_sizes:
                 for tv in cmd.target_variances:
-                    config_name = f"hdb_svd{int(tv*100)}_mcs{mcs}_eps{int(cmd.cluster_selection_epsilon*100)}"
-                    clustering_configs.append({
-                        'method': 'hdbscan',
-                        'min_cluster_size': mcs,
-                        'use_svd': True,
-                        'target_variance': tv,
-                        'cluster_selection_method': 'eom',
-                        'cluster_selection_epsilon': cmd.cluster_selection_epsilon,
-                        'name': config_name
-                    })
+                    for eps in cmd.cluster_selection_epsilon:
+                        config_name = f"hdb_svd{int(tv*100)}_mcs{mcs}_eps{int(eps*100)}"
+                        clustering_configs.append({
+                            'method': 'hdbscan',
+                            'min_cluster_size': mcs,
+                            'use_svd': True,
+                            'target_variance': tv,
+                            'cluster_selection_method': 'eom',
+                            'cluster_selection_epsilon': eps,
+                            'name': config_name
+                        })
         
         elif cmd.clustering_method == 'kmeans':
             for k in cmd.k_values:
@@ -203,12 +204,12 @@ def create_new_motifs(
             logger.info(f"  - {config['name']}")
         
         logger.info(f"Merge parameter combinations: {len(cmd.merge_similarity_thresholds)} × {len(cmd.merge_gene_thresholds)} × {len(cmd.merge_metrics)}")
-        logger.info(f"GWM parameter combinations: {len(cmd.gwm_min_matches)} × {len(cmd.gwm_min_core_genes)} × {len(cmd.gwm_core_thresholds)} × {len(cmd.gwm_min_gene_probs)}")
+        logger.info(f"GWM parameter combinations: {len(cmd.gwm_min_matches)} × {len(cmd.gwm_min_core_genes)} × {len(cmd.gwm_core_thresholds)}")
         
         total_configs = (
             len(clustering_configs) *
             len(cmd.merge_similarity_thresholds) * len(cmd.merge_gene_thresholds) * len(cmd.merge_metrics) *
-            len(cmd.gwm_min_matches) * len(cmd.gwm_min_core_genes) * len(cmd.gwm_core_thresholds) * len(cmd.gwm_min_gene_probs)
+            len(cmd.gwm_min_matches) * len(cmd.gwm_min_core_genes) * len(cmd.gwm_core_thresholds)
         )
         logger.info(f"Total configurations to test: {total_configs}")
  
@@ -232,7 +233,7 @@ def create_new_motifs(
             gwm_min_matches=cmd.gwm_min_matches,
             gwm_min_core_genes=cmd.gwm_min_core_genes,
             gwm_core_thresholds=cmd.gwm_core_thresholds,
-            gwm_min_gene_probs=cmd.gwm_min_gene_probs,
+            gwm_min_gene_probs=cmd.merge_gene_thresholds,
         )
  
     if cmd.visualize_evaluation:
@@ -314,4 +315,99 @@ def detect_existing_motifs(
             compound_structures_filepath=cmd.compound_smiles_filepath,
             output_dirpath=visualization_output_dirpath,
             n_jobs=cmd.cores,
+        )
+
+
+def redo_merge_and_gwms(
+    cmd,
+    log_queue
+):
+    """
+    Redo merging and GWM creation from existing initial motifs.
+    Skips clustering step.
+    """
+    from clusterclue.gwms.create_motifs import create_and_evaluate_gwms_from_motifs
+    import json
+    if cmd.visualize_evaluation:
+        from clusterclue.evaluate.visualize import visualize_evaluation_results
+
+    out_dirpath = Path(cmd.out_dir_path)
+    motifs_dirpath = out_dirpath / "clusterclue_motifs"
+    
+    if not motifs_dirpath.exists():
+        raise ValueError(f"Motifs directory does not exist: {motifs_dirpath}")
+    
+    # Check if initial motifs exist
+    has_motifs = any((motifs_dirpath / subdir).glob("motifs_*.pkl") 
+                     for subdir in motifs_dirpath.iterdir() if subdir.is_dir())
+    if not has_motifs:
+        raise ValueError(f"No initial motifs found in {motifs_dirpath}. "
+                        f"Run create_new_motifs first or check directory structure.")
+    
+    logger.info("=== Redoing merge and GWM creation from existing motifs ===")
+    
+    # Reference clusters should already exist from first run
+    evaluation_dirpath = out_dirpath / "evaluation"
+    prep_ref_dirpath = evaluation_dirpath / "preprocess_reference_clusters"
+    ref_clusters_filepath = prep_ref_dirpath / "clusters.tsv"
+    
+    if not ref_clusters_filepath.exists():
+        raise ValueError(f"Reference clusters not found at {ref_clusters_filepath}. "
+                        f"Run create_new_motifs first to generate these files.")
+    
+    # Get training clusters filepath
+    preprocess_dirpath = out_dirpath / "preprocess"
+    clusters_filepath = preprocess_dirpath / "clusters_gene_filtered.csv"
+    
+    if not clusters_filepath.exists():
+        raise ValueError(f"Training clusters not found at {clusters_filepath}. "
+                        f"Run create_new_motifs first to generate these files.")
+    
+    logger.info(f"Merge parameter combinations: {len(cmd.merge_similarity_thresholds)} × {len(cmd.merge_gene_thresholds)} × {len(cmd.merge_metrics)}")
+    logger.info(f"GWM parameter combinations: {len(cmd.gwm_min_matches)} × {len(cmd.gwm_min_core_genes)} × {len(cmd.gwm_core_thresholds)}")
+    
+    total_configs = (
+        len(cmd.merge_similarity_thresholds) * len(cmd.merge_gene_thresholds) * len(cmd.merge_metrics) *
+        len(cmd.gwm_min_matches) * len(cmd.gwm_min_core_genes) * len(cmd.gwm_core_thresholds)
+    )
+    logger.info(f"Total configurations to test: {total_configs}")
+    
+    best_result = create_and_evaluate_gwms_from_motifs(
+        motifs_dirpath=motifs_dirpath,
+        clusters_filepath=clusters_filepath,
+        annotated_subclusters_filepath=cmd.reference_subclusters_filepath,
+        reference_clusters_filepath=ref_clusters_filepath,
+        overlap_penalty_alpha=cmd.overlap_penalty_alpha,
+        overlap_penalty_beta=cmd.overlap_penalty_beta,
+        out_dirpath=motifs_dirpath,
+        # Merge parameters
+        merge_similarity_thresholds=cmd.merge_similarity_thresholds,
+        merge_gene_thresholds=cmd.merge_gene_thresholds,
+        merge_metrics=cmd.merge_metrics,
+        # GWM parameters
+        gwm_min_matches=cmd.gwm_min_matches,
+        gwm_min_core_genes=cmd.gwm_min_core_genes,
+        gwm_core_thresholds=cmd.gwm_core_thresholds,
+        gwm_min_gene_probs=cmd.merge_gene_thresholds,
+    )
+    
+    if cmd.visualize_evaluation:
+        # Get the gwm with the best penalized score
+        evaluation_results_filepath = motifs_dirpath / "results_final.json"
+        with open(evaluation_results_filepath, 'r') as f:
+            all_results = json.load(f)
+        best_name, best_result = max(all_results.items(), key=lambda x: x[1].get('mean_penalized_score', 0))
+        
+        domain_hits_filepath = Path(ref_clusters_filepath).parent / "all_domain_hits.txt"
+        out_html_dirpath = motifs_dirpath / "evaluation_hits_html" / best_name
+        
+        visualize_evaluation_results(
+            annotated_subclusters_filepath=cmd.reference_subclusters_filepath,
+            evaluation_best_hits_filepath=best_result['eval_best_hits_filepath'],
+            motif_gwms_filepath=best_result['gwms_filepath'],
+            ref_gbks_dirpath=Path(cmd.reference_gbks_dirpath),
+            domain_hits_filepath=domain_hits_filepath,
+            motif_hits_filepath=best_result['eval_hits_filepath'],
+            mibig_compounds_filepath=Path(cmd.compound_smiles_filepath) if cmd.compound_smiles_filepath else None,
+            out_html_dirpath=out_html_dirpath
         )
