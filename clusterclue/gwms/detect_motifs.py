@@ -197,7 +197,6 @@ def visualise_gwm_hits(
     # Generate all reports with master index in one call
     num_bgcs = len(session.list_genbanks())
     num_motifs = len(session.data.motifs)
-    logger.info(f"Generating comprehensive report with {num_bgcs} BGCs and {num_motifs} motifs")
     
     session.generate_all_reports_with_master_index(
         output_dir=output_dirpath,
@@ -206,5 +205,3 @@ def visualise_gwm_hits(
         include_motif_plots=True,
         n_jobs=n_jobs,
     )
-    
-    logger.info(f"Reports generated successfully. Open {Path(output_dirpath) / 'index.html'} to view.")
